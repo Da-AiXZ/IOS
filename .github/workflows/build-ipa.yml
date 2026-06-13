@@ -57,9 +57,9 @@ jobs:
             -Ddefault_library=static \
             --buildtype=release
 
-      - name: Ninja build
+      - name: Ninja build (libs only)
         working-directory: libish
-        run: ninja -C build_arm64
+        run: ninja -C build_arm64 libish.a libish_emu.a libfakefs.a
 
       - name: Verify libs
         run: |
