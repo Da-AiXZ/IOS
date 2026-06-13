@@ -11,32 +11,38 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: true
-          fetch-depth: 0
 
-      # --- 阶段 1: 构建 ish-arm64 静态库 ---
-      - name: Install Meson + Ninja
+      - name: Clone ish-arm64 submodule
+        run: |
+          git clone --depth 1 https://github.com/OpenMinis/ish-arm64.git libish
+          echo "ish-arm64 cloned, files: $(ls libish | wc -l)"
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode-16.4.0.app/Contents/Developer
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Install build tools
         run: brew install meson ninja ldid xcodegen
 
       - name: Get iOS SDK path
         run: |
           SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDKROOT=$SDKROOT" >> $GITHUB_ENV
-          echo "iOS SDK: $SDKROOT"
+          test -d "$SDKROOT" || { echo "ERROR: SDK not found at $SDKROOT"; exit 1; }
 
-      - name: Patch cross-file
+      - name: Patch Meson cross-file
         run: |
           sed -i.bak "s|@SDKROOT@|$SDKROOT|g" ci/crossfiles/ios-arm64.txt
-          echo "Cross-file:"
           cat ci/crossfiles/ios-arm64.txt
 
-      - name: Configure Meson
+      - name: Meson setup
         working-directory: libish
         run: |
           meson setup build_arm64 \
@@ -47,32 +53,30 @@ jobs:
             -Ddefault_library=static \
             --buildtype=release
 
-      - name: Build libish
+      - name: Ninja build
         working-directory: libish
         run: ninja -C build_arm64
 
-      - name: Verify libs
+      - name: Verify static libs
         run: |
-          echo "=== libish.a ===" && ls -lh libish/build_arm64/libish.a
-          echo "=== libish_emu.a ===" && ls -lh libish/build_arm64/libish_emu.a
-          echo "=== libfakefs.a ===" && ls -lh libish/build_arm64/libfakefs.a
+          ls -lh libish/build_arm64/libish.a
+          ls -lh libish/build_arm64/libish_emu.a
+          ls -lh libish/build_arm64/libfakefs.a
           lipo -info libish/build_arm64/libish.a
 
-      # --- 阶段 2: 下载 Alpine rootfs ---
       - name: Download Alpine rootfs
         run: |
-          curl -L -o rootfs.tar.gz \
+          curl -L --retry 3 -o rootfs.tar.gz \
             "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.0-aarch64.tar.gz"
           mkdir -p src/Resources/rootfs
           tar -xzf rootfs.tar.gz -C src/Resources/rootfs
           rm rootfs.tar.gz
-          echo "Rootfs ready: $(ls src/Resources/rootfs | wc -l) entries"
+          echo "Rootfs entries: $(ls src/Resources/rootfs | wc -l)"
 
-      # --- 阶段 3: XcodeGen + Swift 编译 ---
-      - name: Generate Xcode project
-        run: xcodegen generate --spec project.yml --quiet
+      - name: XcodeGen generate
+        run: xcodegen generate --spec project.yml
 
-      - name: Build unsigned IPA
+      - name: xcodebuild
         run: |
           set -o pipefail
           xcodebuild build \
@@ -83,8 +87,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            MESON_BUILD_DIR="$GITHUB_WORKSPACE/libish/build_arm64" \
-            | tee build.log
+            MESON_BUILD_DIR="$GITHUB_WORKSPACE/libish/build_arm64"
 
       - name: Package unsigned IPA
         run: |
@@ -94,18 +97,17 @@ jobs:
           cp -R "$APP" Payload/
           zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
+          ls -lh AgentBox-unsigned.ipa
 
-      # --- 阶段 4: ldid 假签名 ---
       - name: ldid fakesign
         run: |
           unzip -q AgentBox-unsigned.ipa -d Payload/
-          ldid -Ssrc/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox
+          ldid -S src/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox
           cd Payload && zip -r ../AgentBox.ipa . -q && cd ..
           rm -rf Payload
-          echo "Signed: $(ls -lh AgentBox.ipa)"
+          ls -lh AgentBox.ipa
 
-      # --- 阶段 5: 发布 ---
-      - name: Release
+      - name: Release IPA
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -116,9 +118,11 @@ jobs:
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload logs (on failure)
+      - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Build-Logs
-          path: build.log
+          name: Build-Failure-Logs
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/**/Logs/
+            libish/build_arm64/meson-logs/
