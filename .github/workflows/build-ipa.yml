@@ -183,21 +183,37 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. ldid 假签名 ──
+      # ── 12. 构建最新 ldid（ProcursusTeam fork，支持 Xcode 16 Mach-O）──
+      - name: Build ldid from source
+        run: |
+          git clone --depth 1 https://github.com/ProcursusTeam/ldid.git /tmp/ldid-src
+          cd /tmp/ldid-src
+          # ldid 依赖 OpenSSL 和 libplist
+          brew install openssl libplist
+          # 使用系统 clang++ 编译
+          make -j$(sysctl -n hw.logicalcpu) \
+            OPENSSL_PREFIX=$(brew --prefix openssl) \
+            LIBPLIST_PREFIX=$(brew --prefix libplist) \
+            PREFIX=/tmp/ldid-bin
+          mkdir -p /tmp/ldid-bin/bin
+          cp ldid /tmp/ldid-bin/bin/ldid
+          echo "/tmp/ldid-bin/bin" >> $GITHUB_PATH
+          /tmp/ldid-bin/bin/ldid --version 2>/dev/null || /tmp/ldid-bin/bin/ldid 2>&1 | head -1
+
+      # ── 13. ldid 假签名 ──
       - name: ldid fakesign
         run: |
           set -e
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa -d Payload/
-          if ! ldid -S src/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox; then
-            echo "ldid failed, trying ldid2..."
-            ldid2 -S src/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox
-          fi
+          # 先移除可能存在的签名，再注入 entitlements
+          ldid -s Payload/Payload/AgentBox.app/AgentBox 2>/dev/null || true
+          ldid -S src/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox
           cd Payload && zip -r ../AgentBox.ipa . -q && cd ..
           rm -rf Payload
           echo "Signed IPA: $(ls -lh AgentBox.ipa)"
 
-      # ── 13. 发布 Release ──
+      # ── 14. 发布 Release ──
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -209,7 +225,7 @@ jobs:
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 14. 失败时上传日志 ──
+      # ── 15. 失败时上传日志 ──
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4
