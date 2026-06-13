@@ -144,13 +144,13 @@ struct PropertySchema: Codable, Sendable {
     let type: String
     let description: String
     let `enum`: [String]?
-    let items: PropertySchema?
+    // items removed: recursive struct needs @Indirect which may have Codable issues
+    // Re-add when implementing full JSON Schema validation
     
-    init(type: String, description: String, enum: [String]? = nil, items: PropertySchema? = nil) {
+    init(type: String, description: String, enum: [String]? = nil) {
         self.type = type
         self.description = description
         self.enum = `enum`
-        self.items = items
     }
 }
 
