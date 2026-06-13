@@ -11,70 +11,143 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
+      # ── 1. 代码检出 ──
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Clone ish-arm64
+      - name: Clone ish-arm64 (depth 1, no submodules)
         run: |
-          git clone --depth 1 https://github.com/OpenMinis/ish-arm64.git libish
-          echo "Cloned $(ls libish | wc -l) files"
+          git clone --depth 1 --single-branch \
+            https://github.com/OpenMinis/ish-arm64.git libish
+          echo "Cloned $(find libish -maxdepth 1 -type f | wc -l) top-level files"
 
-      - name: Show toolchain
+      # ── 2. 工具链：发现并选择可用的 Xcode ──
+      - name: Discover & select Xcode
         run: |
+          echo "=== Available Xcodes ==="
+          ls -d /Applications/Xcode*.app 2>/dev/null || echo "(none found via ls)"
+          echo ""
+          echo "=== Current xcode-select ==="
+          xcode-select -p 2>/dev/null || echo "(not set)"
+
+          for candidate in \
+            /Applications/Xcode_16.4.app \
+            /Applications/Xcode-16.4.0.app \
+            /Applications/Xcode_16.app \
+            /Applications/Xcode.app \
+            $(ls -dt /Applications/Xcode*.app 2>/dev/null | head -1); do
+            if [ -d "$candidate" ]; then
+              echo ">>> Selecting: $candidate"
+              sudo xcode-select -s "$candidate/Contents/Developer"
+              break
+            fi
+          done
+
+          echo ""
+          echo "=== Final toolchain ==="
+          xcode-select -p
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
-          which clang
+          which clang && clang --version | head -1
 
-      - name: Install tools
-        run: brew install meson ninja ldid xcodegen lld llvm libarchive
+      # ── 3. 安装构建工具 ──
+      - name: Install build tools
+        run: |
+          brew install --quiet meson ninja ldid xcodegen lld llvm libarchive 2>&1 | tail -5
+          echo "=== Installed versions ==="
+          meson --version
+          ninja --version
+          xcodegen --version
 
-      - name: Get SDK path
+      # ── 4. 获取 SDK root ──
+      - name: Capture SDK root
         run: |
           SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDKROOT=$SDKROOT" >> $GITHUB_ENV
-          test -d "$SDKROOT" || { echo "SDK not found"; exit 1; }
-          echo "OK: $SDKROOT"
+          echo "SDK at: $SDKROOT"
+          test -d "$SDKROOT" || { echo "FATAL: SDK root not found"; exit 1; }
+          ls "$SDKROOT/usr/include" | head -5
 
-      - name: Patch cross-file
+      # ── 5. 动态生成 Meson 交叉编译文件 ──
+      - name: Generate Meson cross-file
         run: |
-          sed -i.bak "s|@SDKROOT@|$SDKROOT|g" ci/crossfiles/ios-arm64.txt
+          mkdir -p ci/crossfiles
+          cat > ci/crossfiles/ios-arm64.txt << 'CROSSEOF'
+          [binaries]
+          c = 'clang'
+          ar = 'ar'
+          strip = 'strip'
+
+          [host_machine]
+          system = 'darwin'
+          cpu_family = 'aarch64'
+          cpu = 'aarch64'
+          endian = 'little'
+
+          [built-in options]
+          c_args = ['-arch', 'arm64', '-miphoneos-version-min=16.0']
+          c_link_args = ['-arch', 'arm64', '-miphoneos-version-min=16.0']
+
+          [properties]
+          needs_exe_wrapper = true
+          CROSSEOF
+          echo "=== Generated cross-file ==="
           cat ci/crossfiles/ios-arm64.txt
 
+      # ── 6. Meson 配置 ──
       - name: Meson setup
         working-directory: libish
         env:
+          SDKROOT: ${{ env.SDKROOT }}
           CC: xcrun clang
           CC_FOR_BUILD: env -u SDKROOT -u IPHONEOS_DEPLOYMENT_TARGET xcrun clang
         run: |
+          echo "CC=$CC"
+          echo "CC_FOR_BUILD=$CC_FOR_BUILD"
+          echo "SDKROOT=$SDKROOT"
           meson setup build_arm64 \
             --cross-file ../ci/crossfiles/ios-arm64.txt \
             -Dengine=asbestos \
             -Dkernel=ish \
             -Dguest_arch=arm64 \
             -Ddefault_library=static \
-            --buildtype=release
+            --buildtype=release \
+            --wipe
 
-      - name: Ninja build (libs only)
+      # ── 7. Ninja 构建静态库 ──
+      - name: Ninja build
         working-directory: libish
-        run: ninja -C build_arm64 libish.a libish_emu.a libfakefs.a
-
-      - name: Verify libs
         run: |
-          ls -lh libish/build_arm64/libish.a
-          lipo -info libish/build_arm64/libish.a
+          ninja -C build_arm64 libish.a libish_emu.a libfakefs.a
+          echo "=== Libraries built ==="
+          ls -lh build_arm64/libish.a build_arm64/libish_emu.a build_arm64/libfakefs.a
 
+      - name: Verify libraries
+        run: |
+          echo "=== lipo info ==="
+          lipo -info libish/build_arm64/libish.a
+          lipo -info libish/build_arm64/libish_emu.a
+          lipo -info libish/build_arm64/libfakefs.a
+
+      # ── 8. 下载 Alpine rootfs ──
       - name: Download Alpine rootfs
         run: |
-          curl -L --retry 3 -o src/Resources/rootfs.tar.gz \
-            "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.0-aarch64.tar.gz"
+          ROOTFS_URL="https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.0-aarch64.tar.gz"
+          echo "Downloading from $ROOTFS_URL ..."
+          curl -L --retry 3 --connect-timeout 30 -o src/Resources/rootfs.tar.gz "$ROOTFS_URL"
           ls -lh src/Resources/rootfs.tar.gz
 
-      - name: XcodeGen
-        run: xcodegen generate --spec project.yml
+      # ── 9. XcodeGen 生成项目 ──
+      - name: XcodeGen generate
+        run: |
+          xcodegen generate --spec project.yml --quiet
+          echo "Project generated"
+          ls -lh AgentBox.xcodeproj/project.pbxproj
 
+      # ── 10. Xcode 编译 ──
       - name: xcodebuild
         run: |
           set -o pipefail
@@ -83,28 +156,48 @@ jobs:
             -scheme AgentBox \
             -configuration Release \
             -destination 'generic/platform=iOS' \
+            -derivedDataPath "$GITHUB_WORKSPACE/DerivedData" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            MESON_BUILD_DIR="$GITHUB_WORKSPACE/libish/build_arm64"
+            MESON_BUILD_DIR="$GITHUB_WORKSPACE/libish/build_arm64" \
+            2>&1 | tee xcodebuild.log
+          echo "=== Build exit code: $? ==="
 
-      - name: Package IPA
+      # ── 11. 打包 IPA ──
+      - name: Package unsigned IPA
         run: |
-          APP=$(find ~/Library/Developer/Xcode/DerivedData -name "AgentBox.app" -type d | head -1)
+          set -e
+          APP=$(find "$GITHUB_WORKSPACE/DerivedData" -name "AgentBox.app" -type d 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: .app not found"
+            find "$GITHUB_WORKSPACE/DerivedData" -maxdepth 4 -type d 2>/dev/null || echo "(empty)"
+            echo "=== xcodebuild tail ==="
+            tail -50 xcodebuild.log || true
+            exit 1
+          fi
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
           zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
+          echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
+      # ── 12. ldid 假签名 ──
       - name: ldid fakesign
         run: |
+          set -e
+          rm -rf Payload
           unzip -q AgentBox-unsigned.ipa -d Payload/
-          ldid -S src/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox
+          if ! ldid -S src/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox; then
+            echo "ldid failed, trying ldid2..."
+            ldid2 -S src/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox
+          fi
           cd Payload && zip -r ../AgentBox.ipa . -q && cd ..
           rm -rf Payload
-          ls -lh AgentBox.ipa
+          echo "Signed IPA: $(ls -lh AgentBox.ipa)"
 
+      # ── 13. 发布 Release ──
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -116,11 +209,13 @@ jobs:
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload logs on failure
+      # ── 14. 失败时上传日志 ──
+      - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Failure-Logs
+          name: Failure-Logs-${{ github.run_number }}
           path: |
-            ~/Library/Developer/Xcode/DerivedData/**/Logs/
+            xcodebuild.log
             libish/build_arm64/meson-logs/
+            DerivedData/**/Logs/

@@ -11,7 +11,7 @@ enum MessageRole: String, Codable, Sendable {
 
 // MARK: - 消息内容
 
-enum MessageContent: Sendable, Codable {
+enum MessageContent: Codable {
     case text(String)
     case multimodal(text: String, images: [ImageData])
     case toolUse(id: String, name: String, input: [String: AnyCodable])
@@ -83,7 +83,7 @@ struct ImageData: Codable, Sendable {
 
 // MARK: - 运行时消息（非 SwiftData）
 
-struct ChatMessage: Sendable, Codable {
+struct ChatMessage: Codable {
     let role: MessageRole
     let content: MessageContent
     let toolCallId: String?
@@ -99,7 +99,7 @@ struct ChatMessage: Sendable, Codable {
 
 // MARK: - AnyCodable
 
-struct AnyCodable: Codable, Sendable {
+struct AnyCodable: Codable, @unchecked Sendable {
     let value: Any
     
     init(_ value: Any) { self.value = value }
@@ -156,7 +156,7 @@ struct PropertySchema: Codable, Sendable {
 
 // MARK: - 工具调用
 
-struct ToolCall: Codable, Sendable, Identifiable {
+struct ToolCall: Codable, Identifiable {
     let id: String
     let name: String
     let arguments: [String: AnyCodable]
@@ -180,23 +180,23 @@ struct ToolResult: Codable, Sendable {
 
 // MARK: - 流事件
 
-enum LLMStreamEvent: Sendable {
+enum LLMStreamEvent {
     case textDelta(String)
     case toolCallStart(ToolCallStart)
     case toolCallDelta(ToolCallDelta)
     case toolCallEnd(ToolCall)
     case thinking(String)
-    case error(Error)
+    case error(String)
     case done
 }
 
-enum AgentEvent: Sendable {
+enum AgentEvent {
     case thinking(String)
     case textDelta(String)
     case toolCallStarted(ToolCall)
     case toolCallCompleted(ToolResult)
     case done(ChatMessage)
-    case error(Error)
+    case error(String)
 }
 
 // MARK: - Provider 配置
@@ -264,7 +264,7 @@ struct ModelParameters: Codable, Sendable {
 
 // MARK: - Agent 状态
 
-enum AgentState: Sendable {
+enum AgentState {
     case idle
     case thinking
     case streaming

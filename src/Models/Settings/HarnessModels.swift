@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Agent 快照（检查点）
 
-struct AgentSnapshot: Codable {
+struct AgentSnapshot: Codable, @unchecked Sendable {
     let sessionId: UUID
     let turnCount: Int
     let messageIDs: [UUID]
@@ -13,7 +13,7 @@ struct AgentSnapshot: Codable {
     let tokenUsage: TokenUsage
 }
 
-struct ToolCallRecord: Codable {
+struct ToolCallRecord: Codable, @unchecked Sendable {
     let toolName: String
     let arguments: [String: AnyCodable]
     let result: String
@@ -44,7 +44,7 @@ enum LoopTransition: String, Codable {
 
 // MARK: - 权限决策
 
-enum PermissionDecision: Sendable {
+enum PermissionDecision {
     case allow
     case deny(reason: String)
     case ask(question: String, tool: String)
@@ -122,13 +122,13 @@ enum HookEvent: String, Sendable {
     case stop
 }
 
-enum HookResult: Sendable {
+enum HookResult {
     case allow
     case deny(reason: String)
     case modify(input: [String: AnyCodable])
 }
 
-enum StopHookResult: Sendable {
+enum StopHookResult {
     case `continue`
     case injectMessage(String)
     case block

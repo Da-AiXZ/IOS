@@ -1,5 +1,7 @@
-# Meson cross-compilation for iOS ARM64
-# SDKROOT and CC must be set in environment before running meson
+# iOS ARM64 Meson cross-compilation file
+# Generated dynamically in CI; this is a fallback template.
+# Usage: CC="xcrun clang" meson setup build_arm64 --cross-file this_file.txt
+# xcrun handles SDK discovery via SDKROOT env var automatically.
 
 [binaries]
 c = 'clang'
@@ -13,8 +15,8 @@ cpu = 'aarch64'
 endian = 'little'
 
 [built-in options]
-c_args = ['-arch', 'arm64', '-isysroot', '@SDKROOT@', '-miphoneos-version-min=16.0']
-c_link_args = ['-arch', 'arm64', '-isysroot', '@SDKROOT@', '-miphoneos-version-min=16.0']
+c_args = ['-arch', 'arm64', '-miphoneos-version-min=16.0']
+c_link_args = ['-arch', 'arm64', '-miphoneos-version-min=16.0']
 
 [properties]
 needs_exe_wrapper = true

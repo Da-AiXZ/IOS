@@ -11,6 +11,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
     IPHONEOS_DEPLOYMENT_TARGET: "16.0"
     TARGETED_DEVICE_FAMILY: "1,2"
     # 无签名（TrollStore 用 ldid 假签名）
