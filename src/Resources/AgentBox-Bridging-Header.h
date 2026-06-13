@@ -122,5 +122,11 @@ int agentbox_fork_root_spawn(
 /// @param root_path Null-terminated C string: path to extracted rootfs.
 /// @return 0 on success, non-zero error code on failure.
 int agentbox_boot_ish_kernel(const char *root_path);
+n// MARK: - waitpid Macro Wrappers (Swift can't call C macros)
+
+int agentbox_wifexited(int status);
+int agentbox_wexitstatus(int status);
+int agentbox_wifsignaled(int status);
+int agentbox_wtermsig(int status);
 
 #endif /* AgentBox_Bridging_Header_h */

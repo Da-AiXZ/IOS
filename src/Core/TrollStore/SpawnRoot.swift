@@ -338,7 +338,7 @@ enum SpawnRoot {
         } else {
             var status: Int32 = 0
             waitpid(pid, &status, 0)
-            exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : -1
+            exitCode = agentbox_wifexited(status) != 0 ? agentbox_wexitstatus(status) : -1
         }
 
         return SpawnResult(

@@ -416,3 +416,25 @@ int agentbox_boot_ish_kernel(const char *root_path) {
     int result = actuate_kernel(root_path);
     return result;
 }
+
+// MARK: - waitpid Macro Wrappers (Swift can't call C macros directly)
+
+/// Returns 1 if the child exited normally, 0 otherwise.
+int agentbox_wifexited(int status) {
+    return WIFEXITED(status) ? 1 : 0;
+}
+
+/// Returns the exit status of the child (only valid if WIFEXITED is true).
+int agentbox_wexitstatus(int status) {
+    return WEXITSTATUS(status);
+}
+
+/// Returns 1 if the child was terminated by a signal, 0 otherwise.
+int agentbox_wifsignaled(int status) {
+    return WIFSIGNALED(status) ? 1 : 0;
+}
+
+/// Returns the signal number that terminated the child.
+int agentbox_wtermsig(int status) {
+    return WTERMSIG(status);
+}

@@ -449,7 +449,7 @@ enum FileSystemAccess {
             isDirectory: isDir,
             permissions: Int16(st.st_mode & 0o7777),
             isSymlink: isSymlink,
-            linkCount: st.st_nlink,
+            linkCount: Int16(truncatingIfNeeded: st.st_nlink),
             ownerUID: st.st_uid,
             ownerGID: st.st_gid
         )
