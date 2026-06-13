@@ -374,7 +374,7 @@ enum SpawnRoot {
 
             if result == pid {
                 // Child exited
-                return WIFEXITED(status) ? WEXITSTATUS(status) : -1
+                return agentbox_wifexited(status) != 0 ? agentbox_wexitstatus(status) : -1
             } else if result == -1 {
                 // Error (e.g., no such process)
                 return -1
