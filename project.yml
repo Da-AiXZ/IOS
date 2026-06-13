@@ -48,6 +48,11 @@ settings:
     # Swift-ObjC 桥接
     SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/src/Resources/AgentBox-Bridging-Header.h"
     SWIFT_OBJC_INTEROP_MODE: objc
+    # ish-arm64 C 头文件搜索路径
+    HEADER_SEARCH_PATHS: >
+      $(inherited)
+      $(SRCROOT)/libish
+      $(SRCROOT)/libish/deps/libarchive/libarchive
     # 预处理器定义
     GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) GUEST_ARM64=1"
     SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) GUEST_ARM64"
