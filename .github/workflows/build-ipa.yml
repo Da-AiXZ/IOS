@@ -68,12 +68,9 @@ jobs:
 
       - name: Download Alpine rootfs
         run: |
-          curl -L --retry 3 -o rootfs.tar.gz \
+          curl -L --retry 3 -o src/Resources/rootfs.tar.gz \
             "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.0-aarch64.tar.gz"
-          mkdir -p src/Resources/rootfs
-          tar -xzf rootfs.tar.gz -C src/Resources/rootfs
-          rm rootfs.tar.gz
-          echo "Entries: $(ls src/Resources/rootfs | wc -l)"
+          ls -lh src/Resources/rootfs.tar.gz
 
       - name: XcodeGen
         run: xcodegen generate --spec project.yml
