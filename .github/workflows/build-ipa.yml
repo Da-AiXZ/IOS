@@ -45,6 +45,9 @@ jobs:
 
       - name: Meson setup
         working-directory: libish
+        env:
+          CC: xcrun clang
+          CC_FOR_BUILD: env -u SDKROOT -u IPHONEOS_DEPLOYMENT_TARGET xcrun clang
         run: |
           meson setup build_arm64 \
             --cross-file ../ci/crossfiles/ios-arm64.txt \

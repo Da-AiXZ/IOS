@@ -1,5 +1,5 @@
-# Meson cross-compilation file for iOS ARM64
-# @SDKROOT@ is replaced by CI workflow with the actual SDK path
+# Meson cross-compilation for iOS ARM64
+# SDKROOT and CC must be set in environment before running meson
 
 [binaries]
 c = 'clang'
