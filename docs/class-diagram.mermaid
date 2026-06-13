@@ -1,0 +1,181 @@
+classDiagram
+    direction TB
+
+    %% ======== SpawnRoot 模块 ========
+    class SpawnRoot {
+        &lt;&lt;enum&gt;&gt;
+        +execute(_ command: String, environment: [String: String]?) throws SpawnResult$
+        +execute(executable: String, arguments: [String], environment: [String: String]?) throws SpawnResult$
+        -createPersona() throws Int32$
+        -setupPipes() (Pipe, Pipe)$
+    }
+
+    class SpawnResult {
+        +exitCode: Int32
+        +stdout: Data
+        +stderr: Data
+        +pid: pid_t
+    }
+
+    class SpawnError {
+        &lt;&lt;enum&gt;&gt;
+        spawnFailed(errno: Int32)
+        personaFailed(reason: String)
+        pipeError
+        commandEmpty
+    }
+
+    SpawnRoot ..> SpawnResult : returns
+    SpawnRoot ..> SpawnError : throws
+
+    %% ======== FileSystemAccess 模块 ========
+    class FileSystemAccess {
+        &lt;&lt;enum&gt;&gt;
+        +readFile(at: String) throws Data$
+        +writeFile(at: String, data: Data, createIntermediate: Bool) throws$
+        +deleteFile(at: String) throws$
+        +fileExists(at: String) Bool$
+        +isDirectory(at: String) Bool$
+        +createDirectory(at: String, withIntermediate: Bool) throws$
+        +listDirectory(at: String) throws [String]$
+        +deleteDirectory(at: String) throws$
+        +moveFile(from: String, to: String) throws$
+        +copyFile(from: String, to: String) throws$
+        +attributes(at: String) throws FileAttributes$
+        -posixOpen(path: String, flags: Int32, mode: mode_t) Int32$
+        -findExecutable(named: String) String?$
+        -fileExistsPOSIX(at: String) Bool$
+    }
+
+    class FileAttributes {
+        +size: Int64
+        +modificationDate: Date
+        +creationDate: Date
+        +isDirectory: Bool
+        +permissions: Int16
+    }
+
+    FileSystemAccess ..> FileAttributes : returns
+
+    %% ======== ISHEngine 模块 ========
+    class ISHEngine {
+        &lt;&lt;class&gt;&gt;
+        +shared: ISHEngine$
+        +isInitialized: Bool
+        +state: EngineState
+        +initialize(rootfsURL: URL) throws$
+        +rootfsPath: String
+        -bootCompleted: Bool
+        -startISHKernel(rootPath: String) Int32
+        -validateEngine() throws
+    }
+
+    class EngineState {
+        &lt;&lt;enum&gt;&gt;
+        uninitialized
+        extracting
+        booting
+        ready
+        error(String)
+    }
+
+    class EngineError {
+        &lt;&lt;enum&gt;&gt;
+        rootfsNotFound
+        rootfsCorrupted(reason: String)
+        extractionFailed(underlying: Error)
+        kernelBootFailed(reason: String)
+        alreadyInitialized
+        notInitialized
+        diskSpaceInsufficient(available: Int64, needed: Int64)
+    }
+
+    class RootFSManager {
+        &lt;&lt;class&gt;&gt;
+        +prepareRootFS(from: URL) throws String
+        -extractTarGz(at: URL, to: String) throws
+        -verifyRootFS(at: String) throws
+        +rootfsExists(at: String) Bool
+        +cleanupRootFS(at: String) throws
+    }
+
+    ISHEngine *-- EngineState
+    ISHEngine ..> EngineError : throws
+    ISHEngine *-- RootFSManager
+
+    %% ======== ISHShellBridge 模块 ========
+    class ISHShellBridge {
+        &lt;&lt;class&gt;&gt;
+        +shared: ISHShellBridge$
+        +execute(_ command: String, lineCallback: Closure?) async throws ISHShellResult
+        +execute(executable: String, arguments: [String], environment: [String: String]?, lineCallback: Closure?) async throws ISHShellResult
+        +executeSync(_ command: String, timeout: TimeInterval, lineCallback: Closure?) ISHShellResult
+        +kill(pid: Int32, signal: Int32) Bool
+        -activeProcesses: [Int32: ProcessHandle]
+    }
+
+    class ISHShellResult {
+        +exitCode: Int32
+        +pid: Int32
+        +stdout: String
+        +stderr: String
+        +duration: TimeInterval
+        +success: Bool
+    }
+
+    class ISHShellError {
+        &lt;&lt;enum&gt;&gt;
+        engineNotInitialized
+        processCreationFailed
+        execFailed(reason: String)
+        timeout
+        cancelled
+        unknown(Int32)
+    }
+
+    ISHShellBridge ..> ISHShellResult : returns
+    ISHShellBridge ..> ISHShellError : throws
+    ISHShellBridge --> ISHEngine : depends on
+
+    %% ======== BindMountService 模块 ========
+    class BindMountService {
+        &lt;&lt;class&gt;&gt;
+        +shared: BindMountService$
+        +mounts: [BindMount]
+        +mount(hostPath: String, guestPath: String, isReadOnly: Bool) throws
+        +unmount(guestPath: String) throws
+        +unmountAll() throws
+        -activeMounts: [UUID: BindMount]
+    }
+
+    class BindMount {
+        +id: UUID
+        +hostPath: String
+        +guestPath: String
+        +isReadOnly: Bool
+        +createdAt: Date
+    }
+
+    class MountError {
+        &lt;&lt;enum&gt;&gt;
+        hostPathNotFound
+        guestPathInaccessible
+        alreadyMounted(existing: BindMount)
+        notMounted(guestPath: String)
+        engineNotInitialized
+        mountSyscallFailed(errno: Int32)
+    }
+
+    BindMountService *-- BindMount
+    BindMountService ..> MountError : throws
+    BindMountService --> ISHEngine : depends on
+    BindMountService --> ISHShellBridge : uses for mount cmd
+
+    %% ======== C Bridge ========
+    class ISHAppShim {
+        &lt;&lt;Obj-C&gt;&gt;
+        +current: ISHAppShim$
+        +initISH() Bool
+        +bootKernel(rootPath: NSString) Int32
+        +bootCompleted: Bool
+    }

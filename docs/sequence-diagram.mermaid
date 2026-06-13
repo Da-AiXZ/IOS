@@ -1,0 +1,72 @@
+sequenceDiagram
+    participant Caller as 调用方 (Swift)
+    participant SR as SpawnRoot (enum)
+    participant LibPersona as libpersona.dylib
+    participant Kernel as XNU Kernel
+    participant Child as 子进程 (UID=0)
+
+    Caller->>SR: execute("whoami")
+    SR->>SR: 验证 command 非空
+
+    alt persona 路径
+        SR->>LibPersona: dlopen("/usr/lib/libpersona.dylib")
+        SR->>LibPersona: kpersona_alloc(&info)
+        LibPersona-->>SR: persona_id
+        SR->>SR: 构造 posix_spawnattr_t
+        SR->>SR: posix_spawnattr_set_persona_np(&attr, persona_id, ...)
+        SR->>SR: posix_spawnattr_set_persona_flags(POSIX_SPAWN_PERSONA_FLAGS_ROOT)
+    else fallback 路径
+        SR->>Kernel: fork()
+        Kernel-->>SR: child_pid
+        SR->>Child: setuid(0) in child
+    end
+
+    SR->>SR: 创建 stdout/stderr Pipe
+    SR->>Kernel: posix_spawn(&pid, "/bin/sh", ["-c", command], env, &attr)
+    Kernel-->>Child: 以 UID=0 启动 /bin/sh -c "whoami"
+
+    Child->>Child: execve("/bin/sh", ...)
+    Child-->>SR: stdout: "root\n", stderr: ""
+    Child-->>SR: exitCode: 0
+
+    SR->>SR: 读取 Pipe 数据
+    SR->>LibPersona: dlclose()
+    SR-->>Caller: SpawnResult(exitCode=0, stdout="root\n", stderr="", pid=...)
+
+---
+
+sequenceDiagram
+    participant App as AgentBoxApp
+    participant Engine as ISHEngine (singleton)
+    participant RFSMgr as RootFSManager
+    participant Shim as ISHAppShim (Obj-C)
+    participant Kernel as Linux Kernel (ish)
+    participant Bridge as ISHShellBridge
+
+    App->>Engine: initialize(rootfsURL: bundledURL)
+    Engine->>Engine: guard !bootCompleted
+
+    Engine->>RFSMgr: prepareRootFS(from: rootfsURL)
+    RFSMgr->>RFSMgr: 检查目标路径是否存在 rootfs
+    alt rootfs 已解压
+        RFSMgr-->>Engine: 返回已有 rootfsPath
+    else 首次启动
+        RFSMgr->>RFSMgr: 验证 rootfs.tar.gz 完整性
+        RFSMgr->>RFSMgr: libarchive 解压到 ~/Documents/ish-rootfs/
+        RFSMgr->>RFSMgr: verifyRootFS(): 检查 /bin/sh, /etc/passwd 等
+        RFSMgr-->>Engine: 返回 rootfsPath
+    end
+
+    Engine->>Shim: initISH()
+    Shim-->>Engine: Bool (环境初始化成功)
+
+    Engine->>Kernel: bootKernel(rootfsPath) → actuate_kernel()
+    Kernel-->>Engine: 0 (启动成功)
+
+    Engine->>Bridge: execute("echo 'engine-ready'")
+    Bridge->>Kernel: ISHShellExecutor.executeCommand(...)
+    Kernel-->>Bridge: ISHShellExecutionResult(exitCode=0, output="engine-ready\n")
+    Bridge-->>Engine: ISHShellResult(success=true)
+
+    Engine->>Engine: bootCompleted = true, state = .ready
+    Engine-->>App: 初始化完成
