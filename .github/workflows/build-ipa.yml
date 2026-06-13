@@ -17,27 +17,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Clone ish-arm64 submodule
+      - name: Clone ish-arm64
         run: |
           git clone --depth 1 https://github.com/OpenMinis/ish-arm64.git libish
-          echo "ish-arm64 cloned, files: $(ls libish | wc -l)"
+          echo "Cloned $(ls libish | wc -l) files"
 
-      - name: Select Xcode
+      - name: Show toolchain
         run: |
-          sudo xcode-select -s /Applications/Xcode-16.4.0.app/Contents/Developer
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
+          which clang
 
-      - name: Install build tools
+      - name: Install tools
         run: brew install meson ninja ldid xcodegen
 
-      - name: Get iOS SDK path
+      - name: Get SDK path
         run: |
           SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDKROOT=$SDKROOT" >> $GITHUB_ENV
-          test -d "$SDKROOT" || { echo "ERROR: SDK not found at $SDKROOT"; exit 1; }
+          test -d "$SDKROOT" || { echo "SDK not found"; exit 1; }
+          echo "OK: $SDKROOT"
 
-      - name: Patch Meson cross-file
+      - name: Patch cross-file
         run: |
           sed -i.bak "s|@SDKROOT@|$SDKROOT|g" ci/crossfiles/ios-arm64.txt
           cat ci/crossfiles/ios-arm64.txt
@@ -57,11 +58,9 @@ jobs:
         working-directory: libish
         run: ninja -C build_arm64
 
-      - name: Verify static libs
+      - name: Verify libs
         run: |
           ls -lh libish/build_arm64/libish.a
-          ls -lh libish/build_arm64/libish_emu.a
-          ls -lh libish/build_arm64/libfakefs.a
           lipo -info libish/build_arm64/libish.a
 
       - name: Download Alpine rootfs
@@ -71,9 +70,9 @@ jobs:
           mkdir -p src/Resources/rootfs
           tar -xzf rootfs.tar.gz -C src/Resources/rootfs
           rm rootfs.tar.gz
-          echo "Rootfs entries: $(ls src/Resources/rootfs | wc -l)"
+          echo "Entries: $(ls src/Resources/rootfs | wc -l)"
 
-      - name: XcodeGen generate
+      - name: XcodeGen
         run: xcodegen generate --spec project.yml
 
       - name: xcodebuild
@@ -89,7 +88,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             MESON_BUILD_DIR="$GITHUB_WORKSPACE/libish/build_arm64"
 
-      - name: Package unsigned IPA
+      - name: Package IPA
         run: |
           APP=$(find ~/Library/Developer/Xcode/DerivedData -name "AgentBox.app" -type d | head -1)
           echo "Found: $APP"
@@ -97,7 +96,6 @@ jobs:
           cp -R "$APP" Payload/
           zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
-          ls -lh AgentBox-unsigned.ipa
 
       - name: ldid fakesign
         run: |
@@ -107,7 +105,7 @@ jobs:
           rm -rf Payload
           ls -lh AgentBox.ipa
 
-      - name: Release IPA
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -118,11 +116,11 @@ jobs:
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload failure logs
+      - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Build-Failure-Logs
+          name: Failure-Logs
           path: |
             ~/Library/Developer/Xcode/DerivedData/**/Logs/
             libish/build_arm64/meson-logs/
