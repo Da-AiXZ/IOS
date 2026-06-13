@@ -29,7 +29,7 @@ jobs:
           which clang
 
       - name: Install tools
-        run: brew install meson ninja ldid xcodegen
+        run: brew install meson ninja ldid xcodegen lld llvm libarchive
 
       - name: Get SDK path
         run: |
