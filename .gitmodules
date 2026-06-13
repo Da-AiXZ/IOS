@@ -1,0 +1,3 @@
+[submodule "libish"]
+	path = libish
+	url = https://github.com/OpenMinis/ish-arm64.git

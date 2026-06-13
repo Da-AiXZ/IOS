@@ -1,0 +1,32 @@
+# Xcode 生成文件
+build/
+DerivedData/
+*.xcworkspace/
+
+# XcodeGen 生成（不提交）
+*.xcodeproj/
+*.xcworkspace/
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# 产物
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ish-arm64 构建产物
+libish/build*/
+libish/build_arm64/
+
+# 大文件（CI 中下载的）
+src/Resources/rootfs.tar.gz
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# 备份文件
+*.bak
+*.orig

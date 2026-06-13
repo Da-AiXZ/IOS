@@ -1,0 +1,90 @@
+name: AgentBox
+options:
+  bundleIdPrefix: com.agentbox
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    # 无签名（TrollStore 用 ldid 假签名）
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_IDENTITY: ""
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGNING_ALLOWED: NO
+    ENABLE_BITCODE: NO
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_FILE: src/Resources/Info.plist
+    INFOPLIST_KEY_CFBundleDisplayName: "AgentBox"
+    INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: >
+      UIInterfaceOrientationPortrait
+      UIInterfaceOrientationLandscapeLeft
+      UIInterfaceOrientationLandscapeRight
+    LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_EMIT_LOC_STRINGS: YES
+    # ARM64 only (iOS 16+)
+    ARCHS: arm64
+    VALID_ARCHS: arm64
+    # ish-arm64 头部搜索路径
+    HEADER_SEARCH_PATHS: >
+      $(inherited)
+      $(SRCROOT)/libish
+      $(SRCROOT)/libish/build_arm64
+      $(SRCROOT)/libish/deps/libarchive/libarchive
+    # 链接 ish-arm64 静态库
+    OTHER_LDFLAGS: >
+      $(inherited)
+      $(SRCROOT)/libish/build_arm64/libish.a
+      $(SRCROOT)/libish/build_arm64/libish_emu.a
+      $(SRCROOT)/libish/build_arm64/libfakefs.a
+      -lsqlite3
+      -lz
+    # Swift-ObjC 桥接
+    SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/src/Resources/AgentBox-Bridging-Header.h"
+    SWIFT_OBJC_INTEROP_MODE: objcxx
+    # 预处理器定义
+    GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) GUEST_ARM64=1"
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) GUEST_ARM64"
+    # 优化
+    SWIFT_OPTIMIZATION_LEVEL: "-O"
+    GCC_OPTIMIZATION_LEVEL: s
+
+targets:
+  AgentBox:
+    type: application
+    platform: iOS
+    sources:
+      - path: src/App
+        type: group
+      - path: src/Core
+        type: group
+      - path: src/Agent
+        type: group
+      - path: src/LLM
+        type: group
+      - path: src/Models
+        type: group
+      - path: src/Feature
+        type: group
+      - path: src/Resources
+        type: group
+        buildPhase: resources
+        excludes:
+          - "rootfs.tar.gz"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.agentbox.app
+        PRODUCT_NAME: AgentBox
+    info:
+      path: src/Resources/Info.plist
