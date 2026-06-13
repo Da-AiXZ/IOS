@@ -36,17 +36,12 @@
 #include "kernel/task.h"          // current, task struct
 
 // MARK: - ish-arm64 Obj-C API Headers
-// These headers are part of the ish iOS app layer, repurposed for AgentBox.
-
-#import "ISHShellExecutor.h"      // ISHShellExecutor + ISHShellExecutionResult
-#import "LinuxInterop.h"          // LinuxInterop session bridge
-#import "AppGroup.h"              // AppGroup container utilities
-#import "CurrentRoot.h"           // CurrentRoot path management
-#import "Roots.h"                 // Roots path registry
-
-// MARK: - Process Lifecycle Notifications
-// Defined in ISHShellExecutor.m; observed by ShellBridge.
-extern NSString *const ProcessExitedNotification;
+// ISHShellExecutor stubbed for Phase 2 — requires compiling ISHShellExecutor.m
+// #import "ISHShellExecutor.h"
+// #import "LinuxInterop.h"
+// #import "AppGroup.h"
+// #import "CurrentRoot.h"
+// #import "Roots.h"
 
 // MARK: - AgentBox C Function Declarations (PersonaSpawn.c)
 

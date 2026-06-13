@@ -175,7 +175,7 @@ actor BindMountService {
         let mkdirResult = try await ISHShellBridge.shared.execute(
             "mkdir -p '\(escapePath(guestPath))'"
         )
-        guard mkdirResult.success else {
+        guard mkdirResult.exitCode == 0 else {
             throw MountError.guestPathInaccessible(
                 path: "无法创建挂载点 \(guestPath): \(mkdirResult.stderr)"
             )
@@ -189,7 +189,7 @@ actor BindMountService {
         mountCmd += " --bind '\(escapePath(hostPath))' '\(escapePath(guestPath))'"
 
         let mountResult = try await ISHShellBridge.shared.execute(mountCmd)
-        guard mountResult.success else {
+        guard mountResult.exitCode == 0 else {
             throw MountError.mountSyscallFailed(
                 errno: mountResult.exitCode,
                 message: mountResult.stderr.isEmpty
@@ -202,7 +202,7 @@ actor BindMountService {
         let verifyResult = try await ISHShellBridge.shared.execute(
             "ls -la '\(escapePath(guestPath))'"
         )
-        guard verifyResult.success else {
+        guard verifyResult.exitCode == 0 else {
             // Mount command succeeded but verification failed — try unmount
             _ = try? await ISHShellBridge.shared.execute(
                 "umount '\(escapePath(guestPath))'"
@@ -250,7 +250,7 @@ actor BindMountService {
         let result = try await ISHShellBridge.shared.execute(
             "umount '\(escapePath(guestPath))'"
         )
-        guard result.success else {
+        guard result.exitCode == 0 else {
             throw MountError.unmountFailed(
                 guestPath: guestPath,
                 reason: result.stderr.isEmpty

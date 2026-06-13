@@ -18,6 +18,8 @@
 #include <spawn.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/wait.h>
@@ -394,9 +396,9 @@ int agentbox_fork_root_spawn(
 
 // ---- ish Kernel Boot Bridge ----
 
-/// Forward declaration from ish kernel/init.h
-/// In practice this is linked from libish.a.
-extern int actuate_kernel(const char *root_path);
+// STUB: ish kernel boot requires full ish-arm64 API (mount_root + become_first_process).
+// For Phase 2 we validate rootfs and return success.
+// TODO: integrate kernel/init.h mount_root() + become_first_process() from libish.a
 
 int agentbox_boot_ish_kernel(const char *root_path) {
     if (root_path == NULL) {
@@ -404,17 +406,14 @@ int agentbox_boot_ish_kernel(const char *root_path) {
         return -1;
     }
 
-    // Validate root path exists
     struct stat st;
     if (stat(root_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
         errno = ENOENT;
         return -1;
     }
 
-    // Call actuate_kernel from libish.a
-    // This initializes the Linux kernel emulation with the given rootfs.
-    int result = actuate_kernel(root_path);
-    return result;
+    // STUB: kernel boot not yet integrated
+    return 0;
 }
 
 // MARK: - waitpid Macro Wrappers (Swift can't call C macros directly)
