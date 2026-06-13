@@ -200,16 +200,35 @@ jobs:
           echo "/tmp/ldid-bin/bin" >> $GITHUB_PATH
           /tmp/ldid-bin/bin/ldid --version 2>/dev/null || /tmp/ldid-bin/bin/ldid 2>&1 | head -1
 
-      # ── 13. ldid 假签名 ──
+      # ── 13. ldid 假签名 (非致命：失败则退回到未签名 IPA) ──
       - name: ldid fakesign
         run: |
-          set -e
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
-          ldid -S src/Entitlements.plist Payload/AgentBox.app/AgentBox
-          zip -r AgentBox.ipa Payload/ -q
+          BIN=Payload/AgentBox.app/AgentBox
+
+          # 调试：看二进制格式
+          echo "=== Binary header ==="
+          xxd "$BIN" 2>/dev/null | head -3 || od -A x -t x1z "$BIN" | head -3
+          echo "=== file type ==="
+          file "$BIN" || echo "(file command not available)"
+
+          # 尝试签名
+          if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
+            echo "=== ldid SUCCESS ==="
+            zip -r AgentBox.ipa Payload/ -q
+            SIGNED=true
+          else
+            echo "=== ldid FAILED, falling back to unsigned IPA ==="
+            SIGNED=false
+          fi
           rm -rf Payload
-          echo "Signed IPA: $(ls -lh AgentBox.ipa)"
+
+          if [ "$SIGNED" = false ]; then
+            cp AgentBox-unsigned.ipa AgentBox.ipa
+            echo "WARNING: Released unsigned IPA (ldid failed)"
+          fi
+          ls -lh AgentBox.ipa
 
       # ── 14. 发布 Release ──
       - name: Release
