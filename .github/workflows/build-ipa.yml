@@ -205,11 +205,9 @@ jobs:
         run: |
           set -e
           rm -rf Payload
-          unzip -q AgentBox-unsigned.ipa -d Payload/
-          # 先移除可能存在的签名，再注入 entitlements
-          ldid -s Payload/Payload/AgentBox.app/AgentBox 2>/dev/null || true
-          ldid -S src/Entitlements.plist Payload/Payload/AgentBox.app/AgentBox
-          cd Payload && zip -r ../AgentBox.ipa . -q && cd ..
+          unzip -q AgentBox-unsigned.ipa
+          ldid -S src/Entitlements.plist Payload/AgentBox.app/AgentBox
+          zip -r AgentBox.ipa Payload/ -q
           rm -rf Payload
           echo "Signed IPA: $(ls -lh AgentBox.ipa)"
 
