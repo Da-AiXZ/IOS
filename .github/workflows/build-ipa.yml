@@ -185,12 +185,12 @@ jobs:
 
       # ── 12. 构建最新 ldid（ProcursusTeam fork，支持 Xcode 16 Mach-O）──
       - name: Build ldid from source
+        env:
+          SDKROOT: ""   # 必须清除！ldid 是 macOS 工具，不能链接 iOS SDK
         run: |
           git clone --depth 1 https://github.com/ProcursusTeam/ldid.git /tmp/ldid-src
           cd /tmp/ldid-src
-          # ldid 依赖 OpenSSL 和 libplist
           brew install openssl libplist
-          # 使用系统 clang++ 编译
           make -j$(sysctl -n hw.logicalcpu) \
             OPENSSL_PREFIX=$(brew --prefix openssl) \
             LIBPLIST_PREFIX=$(brew --prefix libplist) \
