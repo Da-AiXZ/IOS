@@ -173,19 +173,20 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs into .app bundle
+          # Extract rootfs into .app bundle (follow symlinks: -h)
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
           if [ -f "$ROOTFS_TGZ" ]; then
             mkdir -p Payload/AgentBox.app/rootfs
-            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/
+            tar -xzhf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/
             echo "=== rootfs structure ==="
             ls -la Payload/AgentBox.app/rootfs/ | head -15
+            ls -la Payload/AgentBox.app/rootfs/bin/ | head -10
             echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
             echo "WARN: $ROOTFS_TGZ not found"
           fi
           cp src/Entitlements.plist Payload/AgentBox.app/
-          zip -ry AgentBox-unsigned.ipa Payload/ -q
+          zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
