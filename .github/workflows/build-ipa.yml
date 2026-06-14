@@ -179,36 +179,45 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. ldid 注入 entitlements（非致命：失败则退回到未签名 IPA）──
-      - name: Inject entitlements
+      # ── 12. 构建 opa334 的 ldid 并签名 ──
+      - name: Build opa334 ldid + sign
+        env:
+          SDKROOT: ""   # ldid 是 macOS 工具
         run: |
-          set +e
+          set -e
+          git clone --depth 1 --branch v2.1.5-procursus7-new \
+            https://github.com/opa334/ldid.git /tmp/ldid-334
+          cd /tmp/ldid-334
+          brew install openssl@3 libplist pkg-config
+          make -j$(sysctl -n hw.logicalcpu) \
+            OPENSSL_PREFIX=$(brew --prefix openssl@3) \
+            LIBPLIST_PREFIX=$(brew --prefix libplist)
+          cp ldid /usr/local/bin/ldid-334
+          echo "ldid-334 build OK"
+
+          # Sign the binary
           rm -rf Payload
-          unzip -q AgentBox-unsigned.ipa
+          unzip -q "$GITHUB_WORKSPACE/AgentBox-unsigned.ipa"
           BIN=Payload/AgentBox.app/AgentBox
-          SIGNED=false
 
-          # Try ldid
-          echo "=== ldid ==="
-          if ldid -S src/Entitlements.plist "$BIN" 2>/dev/null; then
-            echo "ldid OK"
-            SIGNED=true
+          echo "=== opa334 ldid -S ==="
+          if ldid-334 -S src/Entitlements.plist "$BIN" 2>&1; then
+            echo "=== ldid-334 SUCCESS ==="
           else
-            echo "ldid FAILED"
+            echo "ldid-334 failed, exit code: $?"
+            # Try also with --entitlements flag (newer syntax)
+            ldid-334 --entitlements src/Entitlements.plist "$BIN" 2>&1 || true
           fi
 
-          if [ "$SIGNED" = true ]; then
-            zip -r AgentBox.ipa Payload/ -q
-            echo "Signed IPA: $(ls -lh AgentBox.ipa)"
-          else
-            # Unsigned fallback — bundle Entitlements.plist for TrollStore
-            cp AgentBox-unsigned.ipa AgentBox.ipa
-            echo "Unsigned IPA (ldid not compatible, entitlements in .app bundle):"
-            ls -lh AgentBox.ipa
-          fi
+          # Verify entitlements
+          echo "=== Verify ==="
+          codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && echo "ENTITLEMENTS: PRESENT" || echo "ENTITLEMENTS: NOT FOUND"
+
+          zip -r AgentBox.ipa Payload/ -q
           rm -rf Payload
+          echo "IPA: $(ls -lh AgentBox.ipa)"
 
-      # ── 14. 发布 Release ──
+      # ── 13. 发布 Release ──
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -220,7 +229,7 @@ jobs:
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 15. 失败时上传日志 ──
+      # ── 14. 失败时上传日志 ──
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4
