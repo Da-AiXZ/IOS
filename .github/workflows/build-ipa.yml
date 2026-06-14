@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14   # Xcode 15.4 default; ldid compatible (no linker-signed Mach-O)
+    runs-on: macos-13   # Intel x86_64 — ldid built/tested here; cross-compiles ARM64 iOS fine
     timeout-minutes: 120
 
     steps:
@@ -33,9 +33,9 @@ jobs:
           echo "=== Current xcode-select ==="
           xcode-select -p 2>/dev/null || echo "(not set)"
 
-          # macos-14 has Xcode 15.4 as default — ldid compatible
-          echo ">>> Using default Xcode (Xcode 15.x, no linker-signed Mach-O)"
-          # No need to switch; Xcode 15.4 is already selected
+          # macos-13 (Intel) default Xcode ≈ 15.0~15.2
+          # Intel cross-compile → ARM64 iOS → Intel ldid can parse the Mach-O
+          echo ">>> Using default Xcode on macos-13 (Intel)"
 
           echo ""
           echo "=== Final toolchain ==="
