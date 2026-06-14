@@ -33,20 +33,9 @@ jobs:
           echo "=== Current xcode-select ==="
           xcode-select -p 2>/dev/null || echo "(not set)"
 
-          for candidate in \
-            /Applications/Xcode_15.4.app \
-            /Applications/Xcode-15.4.0.app \
-            /Applications/Xcode_15.app \
-            /Applications/Xcode_15.3.app \
-            /Applications/Xcode_15.2.app \
-            /Applications/Xcode_16.app; do
-            if [ -d "$candidate" ]; then
-            if [ -d "$candidate" ]; then
-              echo ">>> Selecting: $candidate"
-              sudo xcode-select -s "$candidate/Contents/Developer"
-              break
-            fi
-          done
+          # macos-14 has Xcode 15.4 as default — ldid compatible
+          echo ">>> Using default Xcode (Xcode 15.x, no linker-signed Mach-O)"
+          # No need to switch; Xcode 15.4 is already selected
 
           echo ""
           echo "=== Final toolchain ==="
