@@ -214,7 +214,7 @@ final class ISHEngine: ObservableObject {
         }
         let bootResult = shim.bootKernel(rootPath)
         guard bootResult == 0 else {
-            let err = EngineError.kernelBootFailed(reason: "actuate_kernel() 返回 \(bootResult)")
+            let err = EngineError.kernelBootFailed(reason: "内核启动返回 \(bootResult)")
             state = .error(err.localizedDescription)
             throw err
         }

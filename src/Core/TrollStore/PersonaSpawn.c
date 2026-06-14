@@ -30,6 +30,7 @@ typedef unsigned int dev_t_;    // matches ish dword_t
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <dlfcn.h>
+#include <limits.h>
 
 // ---- Undocumented libpersona types and constants ----
 
@@ -455,18 +456,25 @@ int agentbox_boot_ish_kernel(const char *root_path) {
         return -1;
     }
 
+    // Resolve symlinks in path (iOS containers use symlinks like /var -> /private/var)
+    char real_path[PATH_MAX];
+    if (realpath(root_path, real_path) == NULL) {
+        fprintf(stderr, "[AGENTBOX] realpath(%s) failed: %s\n", root_path, strerror(errno));
+        return -1;
+    }
+
     struct stat st;
-    if (stat(root_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
+    if (stat(real_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
         errno = ENOENT;
         return -1;
     }
 
-    fprintf(stderr, "[AGENTBOX] Booting ish kernel, rootfs=%s\n", root_path);
+    fprintf(stderr, "[AGENTBOX] Booting ish kernel, rootfs=%s (real=%s)\n", root_path, real_path);
 
     // ---- Step 1: Mount fakefs ----
-    int err = mount_root(&fakefs, root_path);
+    int err = mount_root(&fakefs, real_path);
     if (err < 0) {
-        fprintf(stderr, "[AGENTBOX] mount_root failed: %d\n", err);
+        fprintf(stderr, "[AGENTBOX] mount_root failed: %d (errno=%d: %s)\n", err, errno, strerror(errno));
         return err;
     }
     fprintf(stderr, "[AGENTBOX] mount_root OK\n");
