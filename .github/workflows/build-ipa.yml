@@ -117,11 +117,12 @@ jobs:
           ls -lh build_arm64/libish.a build_arm64/libish_emu.a build_arm64/libfakefs.a
           # Build fakefsify (not in default ninja targets)
           echo "=== Building fakefsify ==="
+          brew install libarchive 2>/dev/null
           cc -o build_arm64/tools/fakefsify tools/fakefsify.c tools/fakefs.c util/fchdir.c \
             -I. -Itools -Iutil \
-            $(pkg-config --cflags libarchive 2>/dev/null || echo "") \
+            -I$(brew --prefix libarchive)/include \
             build_arm64/libfakefs.a \
-            $(pkg-config --libs libarchive 2>/dev/null || echo "-larchive") \
+            -L$(brew --prefix libarchive)/lib -larchive \
             -lz -lbz2
           ls -lh build_arm64/tools/fakefsify
 
