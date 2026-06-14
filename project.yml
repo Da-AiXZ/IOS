@@ -75,6 +75,9 @@ targets:
         type: group
       - path: src/LLM
         type: group
+      # ISHShellExecutor integration (Phase 2)
+      - path: src/Core/ISHBridge/ISHShellExecutor.m
+      - path: src/Core/ISHBridge/AgentBoxAppDelegate.m
       - path: src/Models
         type: group
       - path: src/Feature

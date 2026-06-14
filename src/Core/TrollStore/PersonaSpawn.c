@@ -395,10 +395,39 @@ int agentbox_fork_root_spawn(
 }
 
 // ---- ish Kernel Boot Bridge ----
+//
+// External symbols from libish.a and libfakefs.a.
+// These are resolved at link time; declared here as extern to avoid
+// pulling in every internal kernel header.
 
-// STUB: ish kernel boot requires full ish-arm64 API (mount_root + become_first_process).
-// For Phase 2 we validate rootfs and return success.
-// TODO: integrate kernel/init.h mount_root() + become_first_process() from libish.a
+extern struct fs fakefs;                             // libfakefs.a: fake filesystem instance
+
+extern int  mount_root(struct fs *fs, const char *path); // libfakefs.a: mount fakefs at path
+extern void FsInitialize(void);                          // libish: init filesystem layer
+extern void become_first_process(void);                   // libish: make current task init (PID 1)
+
+extern int  generic_mknodat(struct fd *at, const char *path, mode_t_ mode, dev_t_ dev);
+extern int  generic_mkdirat(struct fd *at, const char *path, mode_t_ mode);
+
+#define TTY_CONSOLE_MAJOR 4
+
+extern struct tty_driver *tty_drivers[];              // libish: indexed by major number
+extern struct tty_driver  ios_console_driver;         // libish: iOS console backend
+extern void set_console_device(int major, int minor);
+extern int  create_stdio(const char *device, int major, int minor);
+
+extern struct task *current;                          // libish: pointer to current task
+extern void task_start(struct task *task);            // libish: schedule task
+extern void (*exit_hook)(struct task *task, int code); // libish: called when a process exits
+
+// dev_t construction helper (matches ish's dev_make macro)
+static inline dev_t_ dev_make(int major, int minor) {
+    return (dev_t_)(((major) << 8) | (minor));
+}
+
+/// Exit hook — called from ish kernel when a guest process exits.
+/// Defined in AgentBoxAppDelegate.m (posts ProcessExitedNotification).
+extern void agentbox_exit_hook(struct task *task, int code);
 
 int agentbox_boot_ish_kernel(const char *root_path) {
     if (root_path == NULL) {
@@ -412,7 +441,40 @@ int agentbox_boot_ish_kernel(const char *root_path) {
         return -1;
     }
 
-    // STUB: kernel boot not yet integrated
+    // 1. Mount the fake filesystem at the rootfs path
+    int err = mount_root(&fakefs, root_path);
+    if (err < 0) {
+        fprintf(stderr, "agentbox_boot_ish_kernel: mount_root(\"%s\") failed: %d\n", root_path, err);
+        return err;
+    }
+
+    // 2. Initialize the filesystem layer
+    FsInitialize();
+
+    // 3. Become the first process (PID 1 / init)
+    become_first_process();
+
+    // 4. Create essential device nodes
+    generic_mknodat(NULL, "/dev/null",    S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 3));
+    generic_mknodat(NULL, "/dev/zero",    S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 5));
+    generic_mknodat(NULL, "/dev/tty",     S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 0));
+    generic_mknodat(NULL, "/dev/console", S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 1));
+    generic_mknodat(NULL, "/dev/ptmx",    S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 2));
+
+    // 5. Create /dev/pts directory for pseudo-terminal slaves
+    generic_mkdirat(NULL, "/dev/pts", 0755);
+
+    // 6. Set up the iOS console driver
+    tty_drivers[TTY_CONSOLE_MAJOR] = &ios_console_driver;
+    set_console_device(TTY_CONSOLE_MAJOR, 1);
+    create_stdio("/dev/console", TTY_CONSOLE_MAJOR, 1);
+
+    // 7. Register exit hook so ISHShellExecutor can receive process-exit events
+    exit_hook = agentbox_exit_hook;
+
+    // 8. Start the init task — the kernel is now live
+    task_start(current);
+
     return 0;
 }
 

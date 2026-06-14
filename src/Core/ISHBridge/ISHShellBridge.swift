@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - ISHShellResult
 
-/// Shell 执行结果（Phase 2 stub: 使用 SpawnRoot, 后续集成 ISHShellExecutor）。
+/// Shell 执行结果（Phase 2: 基于 ISHShellExecutor）。
 struct ISHShellResult: Sendable {
     let exitCode: Int32
     let pid: Int32
@@ -35,8 +35,8 @@ enum ISHShellError: Error, LocalizedError {
 
 /// Linux guest Shell 执行桥接。
 ///
-/// Phase 2: 基于 SpawnRoot 实现 (通过 chroot 到 Alpine rootfs 执行)。
-/// 后续阶段集成 ish-arm64 的 ISHShellExecutor ObjC API 以获得完整终端模拟。
+/// Phase 2: 基于 ISHShellExecutor ObjC API 实现真实 ish 内核内命令执行。
+/// 替代了 Phase 1 的 SpawnRoot / chroot 方案。
 actor ISHShellBridge {
     static let shared = ISHShellBridge()
 
@@ -44,6 +44,13 @@ actor ISHShellBridge {
 
     // MARK: - Async Execute
 
+    /// 在 ish guest 内异步执行命令。
+    ///
+    /// - Parameters:
+    ///   - command: 待执行的 shell 命令（经 /bin/sh -c 执行）。
+    ///   - lineCallback: 逐行输出回调 (line, isStderr)，可选。
+    /// - Returns: ``ISHShellResult`` 包含退出码、PID、stdout/stderr 和耗时。
+    /// - Throws: ``ISHShellError``。
     func execute(
         _ command: String,
         lineCallback: ((String, Bool) -> Void)? = nil
@@ -57,67 +64,116 @@ actor ISHShellBridge {
         }
 
         let startTime = Date()
-        let fullCommand = buildChrootCommand(trimmed)
-        _ = lineCallback  // TODO: streaming via pipe when ISHShellExecutor integrated
 
-        let result = try SpawnRoot.execute(fullCommand, timeout: 60)
-        activePids.remove(Int32(result.pid))
+        return try await withCheckedThrowingContinuation { continuation in
+            let pid = ISHShellExecutor.executeCommand(
+                trimmed,
+                lineCallback: { line, isStderr in
+                    lineCallback?(line, isStderr)
+                },
+                completion: { result in
+                    let shellResult = ISHShellResult(
+                        exitCode: Int32(result.exitCode),
+                        pid: Int32(result.pid),
+                        stdout: result.output ?? "",
+                        stderr: result.errorOutput ?? "",
+                        duration: result.duration
+                    )
+                    continuation.resume(returning: shellResult)
+                }
+            )
 
-        return ISHShellResult(
-            exitCode: result.exitCode,
-            pid: Int32(result.pid),
-            stdout: result.stdoutString,
-            stderr: result.stderrString,
-            duration: Date().timeIntervalSince(startTime)
-        )
+            if pid < 0 {
+                let reason: String
+                switch pid {
+                case ISHShellExecutorError.processCreationFailed.rawValue:
+                    reason = "进程创建失败"
+                case ISHShellExecutorError.execFailed.rawValue:
+                    reason = "exec 失败"
+                case ISHShellExecutorError.cancelled.rawValue:
+                    reason = "已取消"
+                default:
+                    reason = "ISHShellExecutor 错误码: \(pid)"
+                }
+                continuation.resume(throwing: ISHShellError.spawnFailed(reason: reason))
+                return
+            }
+
+            // Track active PID (auto-removed when process exits).
+            Task { [weak self] in
+                await self?.trackPid(Int32(pid))
+            }
+        }
     }
 
     // MARK: - Sync Execute
 
+    /// 同步执行命令（阻塞当前线程直到进程退出或超时）。
+    ///
+    /// - Parameters:
+    ///   - command: 待执行的 shell 命令。
+    ///   - timeout: 超时时间（秒），超过则抛出 ``ISHShellError/timeout``。
+    /// - Returns: ``ISHShellResult``。
+    /// - Throws: ``ISHShellError``。
     func executeSync(_ command: String, timeout: TimeInterval = 60) throws -> ISHShellResult {
-        var result: ISHShellResult?
-        var error: Error?
+        guard ISHEngine.shared.isInitialized else {
+            throw ISHShellError.engineNotInitialized
+        }
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw ISHShellError.commandEmpty
+        }
 
-        let sem = DispatchSemaphore(value: 0)
-        Task {
-            do {
-                result = try await execute(command)
-            } catch let e {
-                error = e
+        let result = ISHShellExecutor.executeCommandSync(
+            trimmed,
+            timeout: timeout,
+            lineCallback: nil
+        )
+
+        guard result.error == ISHShellExecutorError.none else {
+            switch result.error {
+            case .timeout:
+                throw ISHShellError.timeout
+            case .cancelled:
+                throw ISHShellError.processKilled(pid: Int32(result.pid))
+            default:
+                throw ISHShellError.spawnFailed(
+                    reason: "ISHShellExecutor 错误: \(result.error.rawValue)"
+                )
             }
-            sem.signal()
         }
-        let waitResult = sem.wait(timeout: .now() + timeout)
-        if waitResult == .timedOut {
-            throw ISHShellError.timeout
-        }
-        if let error = error { throw error }
-        return result!
+
+        return ISHShellResult(
+            exitCode: Int32(result.exitCode),
+            pid: Int32(result.pid),
+            stdout: result.output ?? "",
+            stderr: result.errorOutput ?? "",
+            duration: result.duration
+        )
     }
 
     // MARK: - Kill
 
+    /// 向 guest 进程发送信号。
+    /// - Parameters:
+    ///   - pid: Guest 进程 PID。
+    ///   - signal: 信号编号，默认 SIGKILL (9)。
     func kill(pid: Int32, signal: Int32 = 9 /* SIGKILL */) {
-        Darwin.kill(pid, signal)
+        ISHShellExecutor.killProcess(pid, withSignal: signal)
         activePids.remove(pid)
     }
 
+    /// 杀死所有当前跟踪的活跃进程。
     func killAll() {
         for pid in activePids {
-            Darwin.kill(pid, SIGKILL)
+            ISHShellExecutor.killProcess(pid, withSignal: SIGKILL)
         }
         activePids.removeAll()
     }
 
     // MARK: - Private
 
-    /// Build a chroot command that runs inside the Alpine rootfs.
-    /// Uses the rootfs path from ISHEngine.
-    private func buildChrootCommand(_ command: String) -> String {
-        // Phase 2 stub: execute directly via SpawnRoot in Darwin context.
-        // Full chroot integration requires ish kernel to be running.
-        // TODO: Replace with `/bin/sh -c "chroot <rootfs> /bin/sh -c '<command>'"`
-        // once ISHShellExecutor is integrated.
-        return command
+    private func trackPid(_ pid: Int32) {
+        activePids.insert(pid)
     }
 }

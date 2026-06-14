@@ -31,13 +31,16 @@
 // File system layer
 #include "fs/real.h"              // realfs bind mount, realfs_open, etc.
 #include "fs/path.h"              // path resolution utilities
+#include "fs/fake.h"              // fakefs struct (mount_root)
 
-// Sync primitive helpers (used by AppDelegate.m)
+// TTY / console
+#include "kernel/tty.h"           // TTY_CONSOLE_MAJOR, tty_drivers, ios_console_driver
+
+// Sync primitive helpers (used by AgentBoxAppDelegate.m)
 #include "kernel/task.h"          // current, task struct
 
 // MARK: - ish-arm64 Obj-C API Headers
-// ISHShellExecutor stubbed for Phase 2 — requires compiling ISHShellExecutor.m
-// #import "ISHShellExecutor.h"
+#import "ISHShellExecutor.h"
 // #import "LinuxInterop.h"
 // #import "AppGroup.h"
 // #import "CurrentRoot.h"
