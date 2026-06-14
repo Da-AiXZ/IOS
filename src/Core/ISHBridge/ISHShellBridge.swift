@@ -117,14 +117,15 @@ actor ISHShellBridge {
     /// - Returns: ``ISHShellResult``。
     /// - Throws: ``ISHShellError``。
     func executeSync(_ command: String, timeout: TimeInterval = 60) throws -> ISHShellResult {
-        let initSem = DispatchSemaphore(value: 0)
-        var engineReady = false
-        Task { @MainActor in
-            engineReady = ISHEngine.shared.isInitialized
-            initSem.signal()
+        // Read @MainActor state synchronously via a Sendable box
+        let box = Box<Bool>(false)
+        let sem = DispatchSemaphore(value: 0)
+        Task { @MainActor [box] in
+            box.value = ISHEngine.shared.isInitialized
+            sem.signal()
         }
-        initSem.wait()
-        guard engineReady else {
+        sem.wait()
+        guard box.value else {
             throw ISHShellError.engineNotInitialized
         }
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -184,4 +185,13 @@ actor ISHShellBridge {
     private func trackPid(_ pid: Int32) {
         activePids.insert(pid)
     }
+}
+
+// MARK: - Sendable Box (for Xcode 15.4 compat)
+
+/// Mutable box for passing values across concurrency domains.
+/// Used by `executeSync` to bridge `@MainActor` state to a synchronous caller.
+private final class Box<T>: @unchecked Sendable {
+    var value: T
+    init(_ value: T) { self.value = value }
 }
