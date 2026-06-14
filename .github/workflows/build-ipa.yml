@@ -201,13 +201,14 @@ jobs:
           BIN=Payload/AgentBox.app/AgentBox
 
           echo "=== opa334 ldid -S ==="
-          if ldid-334 -S src/Entitlements.plist "$BIN" 2>&1; then
+          if ldid-334 -S "$GITHUB_WORKSPACE/src/Entitlements.plist" "$BIN" 2>&1; then
             echo "=== ldid-334 SUCCESS ==="
           else
-            echo "ldid-334 failed, exit code: $?"
-            # Try also with --entitlements flag (newer syntax)
-            ldid-334 --entitlements src/Entitlements.plist "$BIN" 2>&1 || true
+            echo "ldid-334 -S failed, trying with -s then -S..."
+            ldid-334 -s "$BIN" 2>/dev/null || true
+            ldid-334 -S "$GITHUB_WORKSPACE/src/Entitlements.plist" "$BIN" 2>&1 || true
           fi
+          cd "$GITHUB_WORKSPACE"
 
           # Verify entitlements
           echo "=== Verify ==="
