@@ -173,10 +173,11 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Bundle rootfs so ISHEngine can boot Linux at runtime
+          # Extract rootfs into .app bundle at build time (no runtime extraction needed)
           if [ -f "alpine-aarch64.tar.gz" ]; then
-            cp alpine-aarch64.tar.gz Payload/AgentBox.app/
-            echo "RootFS bundled: $(ls -lh Payload/AgentBox.app/alpine-aarch64.tar.gz | awk '{print $5}')"
+            mkdir -p Payload/AgentBox.app/rootfs
+            tar -xzf alpine-aarch64.tar.gz -C Payload/AgentBox.app/rootfs/
+            echo "RootFS extracted: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
             echo "WARN: rootfs not found, skipping"
           fi

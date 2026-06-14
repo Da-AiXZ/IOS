@@ -116,10 +116,4 @@ int agentbox_wexitstatus(int status);
 int agentbox_wifsignaled(int status);
 int agentbox_wtermsig(int status);
 
-// MARK: - libarchive tar.gz extraction (no entitlements needed)
-
-/// Extract tar.gz to target_dir using libarchive.
-/// Returns 0 on success, -1 on error.
-int agentbox_extract_targz(const char *targz_path, const char *target_dir);
-
 #endif /* AgentBox_Bridging_Header_h */

@@ -284,12 +284,9 @@ final class ISHEngine: ObservableObject {
 /// 3. 幂等：已解压则跳过
 final class RootFSManager: @unchecked Sendable {
 
-    /// rootfs 解压目标根目录（App Documents 内）。
+    /// RootFS 在 .app bundle 内（CI 预解压）。
     private var targetRoot: URL {
-        let docs = FileManager.default.urls(
-            for: .documentDirectory, in: .userDomainMask
-        ).first!
-        return docs.appendingPathComponent("ish-rootfs", isDirectory: true)
+        Bundle.main.bundleURL.appendingPathComponent("rootfs", isDirectory: true)
     }
 
     /// rootfs 解压后的完整路径。
@@ -356,14 +353,17 @@ final class RootFSManager: @unchecked Sendable {
 
     // MARK: - Extraction
 
-    /// 使用 libarchive C API 解压 tar.gz（不需要 entitlements）。
+    /// RootFS 预解压在 .app bundle 的 rootfs/ 目录中。
+    /// 无需运行时解压，直接指向即可。
     private func extractTarGz(at sourceURL: URL) async throws {
-        try FileSystemAccess.createDirectory(at: rootfsPath, withIntermediate: true)
-
-        let result = agentbox_extract_targz(sourceURL.path, rootfsPath)
-        guard result == 0 else {
-            throw EngineError.extractionFailed(underlying: "libarchive extraction failed, errno: \(errno)")
+        // RootFS is already extracted in CI at build time into .app/rootfs/
+        // Just verify it exists
+        let rootfsDir = rootfsPath
+        let shPath = (rootfsDir as NSString).appendingPathComponent("bin/sh")
+        guard FileManager.default.fileExists(atPath: shPath) else {
+            throw EngineError.rootfsCorrupted(reason: "rootfs /bin/sh not found at \(shPath)")
         }
+        print("[ISHEngine] RootFS verified at: \(rootfsDir)")
     }
 
     // MARK: - Verification
