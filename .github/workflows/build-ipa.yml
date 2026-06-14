@@ -186,23 +186,10 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 签名（非致命，不行就未签名）──
-      - name: Sign (best effort)
+      # ── 12. 发布（未签名 — zsign ad-hoc 导致闪退）──
+      - name: Final IPA (unsigned)
         run: |
-          set +e
-          rm -rf Payload
-          unzip -q AgentBox-unsigned.ipa
-          BIN=Payload/AgentBox.app/AgentBox
-
-          ldid -S src/Entitlements.plist "$BIN" 2>/dev/null && echo "ldid: OK" || echo "ldid: no"
-          brew install zsign 2>/dev/null
-          zsign -a -e src/Entitlements.plist -o /tmp/z.ipa AgentBox-unsigned.ipa 2>/dev/null && {
-            rm -rf Payload && unzip -q /tmp/z.ipa
-            echo "zsign: tried"
-          } || echo "zsign: no"
-
-          zip -r AgentBox.ipa Payload/ -q
-          rm -rf Payload /tmp/z.ipa
+          cp AgentBox-unsigned.ipa AgentBox.ipa
           echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 13. 发布 Release ──
