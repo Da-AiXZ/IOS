@@ -471,27 +471,24 @@ int agentbox_boot_ish_kernel(const char *root_path) {
 
     fprintf(stderr, "[AGENTBOX] Booting ish kernel, rootfs=%s (real=%s)\n", root_path, real_path);
 
-    // Diagnostic: try opening the directory ourselves to see if it's accessible
+    // ---- DIAGNOSTIC: skip mount_root, test become_first_process + task_start alone ----
+    // STEP A: test open() on the directory
     int test_fd = open(real_path, O_DIRECTORY);
     if (test_fd < 0) {
-        fprintf(stderr, "[AGENTBOX] DIAG: open(%s, O_DIRECTORY) failed: %d (%s)\n",
-                real_path, errno, strerror(errno));
-    } else {
-        fprintf(stderr, "[AGENTBOX] DIAG: open(%s, O_DIRECTORY) OK, fd=%d\n", real_path, test_fd);
-        // Write a test file to verify writability
-        if (write(test_fd, "", 0) >= 0) {
-            fprintf(stderr, "[AGENTBOX] DIAG: directory is writable\n");
-        }
-        close(test_fd);
+        fprintf(stderr, "[AGENTBOX] open(dir) failed: %d (%s)\n", errno, strerror(errno));
+        return -1;
     }
+    close(test_fd);
+    fprintf(stderr, "[AGENTBOX] open(dir) OK\n");
 
-    // ---- Step 1: Mount fakefs ----
+    // STEP B: mount_root (REAL)
     int err = mount_root(&fakefs, real_path);
     if (err < 0) {
-        fprintf(stderr, "[AGENTBOX] mount_root failed: %d (errno=%d: %s)\n", err, errno, strerror(errno));
-        return err;
+        fprintf(stderr, "[AGENTBOX] mount_root failed: %d (errno=%d: %s) — TRYING SKIP\n", err, errno, strerror(errno));
+        // Skip mount_root, move on to become_first_process
+    } else {
+        fprintf(stderr, "[AGENTBOX] mount_root OK\n");
     }
-    fprintf(stderr, "[AGENTBOX] mount_root OK\n");
 
     // ---- Step 2: Become PID 1 ----
     become_first_process();
