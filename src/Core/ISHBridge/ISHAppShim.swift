@@ -29,7 +29,7 @@ final class ISHAppShim: NSObject {
     // MARK: - State
 
     /// Whether the ish kernel has been successfully booted.
-    @objc private(set) var bootCompleted: Bool = false
+    @objc var bootCompleted: Bool = false
 
     /// The path to the extracted root filesystem.
     @objc private(set) var rootPath: String = ""

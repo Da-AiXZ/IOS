@@ -173,30 +173,25 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs (rsync -aL dereferences all symlinks → real files)
+          # Extract rootfs (preserve symlinks — FileManager follows them)
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
           if [ -f "$ROOTFS_TGZ" ]; then
-            TMPROOT="/tmp/agentbox-rootfs-$$"
-            mkdir -p "$TMPROOT" Payload/AgentBox.app/rootfs
-            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C "$TMPROOT/"
-            # rsync -aL: archive + convert symlinks to real copies
-            rsync -aL "$TMPROOT/" Payload/AgentBox.app/rootfs/
-            rm -rf "$TMPROOT"
-            echo "=== rootfs/bin/ (should show regular files, not symlinks) ==="
+            mkdir -p Payload/AgentBox.app/rootfs
+            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/
+            echo "=== rootfs/bin/ ==="
             ls -la Payload/AgentBox.app/rootfs/bin/ | head -10
-            ROOTFS_KB=$(du -sk Payload/AgentBox.app/rootfs/ | awk '{print $1}')
-            echo "RootFS size: ${ROOTFS_KB}K"
-            # Verify busybox is a real file with size > 0
-            if [ -f Payload/AgentBox.app/rootfs/bin/busybox ] && [ -s Payload/AgentBox.app/rootfs/bin/busybox ]; then
-              echo "busybox: OK ($(ls -lh Payload/AgentBox.app/rootfs/bin/busybox | awk '{print $5}'))"
+            BB=$(find Payload/AgentBox.app/rootfs/bin/ -name busybox -type f | head -1)
+            if [ -n "$BB" ] && [ -s "$BB" ]; then
+              echo "busybox: OK ($(ls -lh "$BB" | awk '{print $5}'))"
             else
-              echo "ERROR: busybox missing or empty!"
+              echo "WARN: busybox not found as regular file"
             fi
+            echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
             echo "WARN: $ROOTFS_TGZ not found"
           fi
           cp src/Entitlements.plist Payload/AgentBox.app/
-          zip -r AgentBox-unsigned.ipa Payload/ -q
+          zip -ry AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
