@@ -194,7 +194,7 @@ jobs:
           BIN=Payload/AgentBox.app/AgentBox
           SIGNED=false
 
-          # 方案 1: codesign（已验证能注入 entitlements，TrollStore 可识别）
+          # codesign 只签二进制（不签整个 .app，避免闪退）
           echo "=== codesign ==="
           if codesign --force --sign - \
             --entitlements src/Entitlements.plist \
@@ -202,22 +202,16 @@ jobs:
             echo "codesign OK"
             SIGNED=true
           else
-            echo "codesign failed: $?"
-          fi
-
-          # 方案 2: ldid（fallback，Xcode 16.4 兼容性已知有问题）
-          if [ "$SIGNED" = false ]; then
-            echo "=== ldid fallback ==="
+            echo "codesign failed, trying ldid"
             if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
               echo "ldid OK"
               SIGNED=true
-            else
-              echo "ldid failed"
             fi
           fi
 
+          # 打包 IPA — 必须用 Payload/ 前缀，否则 TrollStore 报 301
           if [ "$SIGNED" = true ]; then
-            cd Payload && zip -r ../AgentBox.ipa . -q && cd ..
+            zip -r AgentBox.ipa Payload/ -q
             echo "Signed IPA: $(ls -lh AgentBox.ipa)"
           else
             cp AgentBox-unsigned.ipa AgentBox.ipa

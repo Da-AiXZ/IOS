@@ -35,7 +35,8 @@ typedef unsigned int dev_t_;    // matches ish dword_t
 
 #define KPERSONA_INFO_VERSION_1 1
 #define KPERSONA_ID_MAX         10
-#define POSIX_SPAWN_PERSONA_FLAGS_ROOT 1
+#define POSIX_SPAWN_PERSONA_FLAGS_OVERRIDE 2  // use existing persona
+#define POSIX_SPAWN_PERSONA_SYSTEM 99          // system persona type
 
 /// Undocumented kernel persona info structure.
 /// Fields are reverse-engineered from AppleMobileFileIntegrity / XNU sources.
@@ -66,6 +67,16 @@ typedef int (*posix_spawnattr_set_persona_np_fn)(
 /// Typedef for posix_spawnattr_set_persona_flags
 typedef int (*posix_spawnattr_set_persona_flags_fn)(
     posix_spawnattr_t *attr, uint32_t flags
+);
+
+/// Typedef for posix_spawnattr_set_persona_uid_np
+typedef int (*posix_spawnattr_set_persona_uid_np_fn)(
+    posix_spawnattr_t *attr, uid_t uid
+);
+
+/// Typedef for posix_spawnattr_set_persona_gid_np
+typedef int (*posix_spawnattr_set_persona_gid_np_fn)(
+    posix_spawnattr_t *attr, gid_t gid
 );
 
 // ---- Helper: load libpersona function by name ----
@@ -158,48 +169,51 @@ int agentbox_spawn_with_persona(
     int *out_stderr_fd,
     pid_t *out_pid
 ) {
+    (void)persona_id; // not used in TrollStore approach (uses SYSTEM persona directly)
+    
     if (binary_path == NULL || argv == NULL ||
         out_stdout_fd == NULL || out_stderr_fd == NULL || out_pid == NULL) {
         errno = EINVAL;
         return -1;
     }
 
+    // Load TrollStore-compatible persona APIs
     posix_spawnattr_set_persona_np_fn set_persona_fn =
         (posix_spawnattr_set_persona_np_fn)agentbox_dlsym_persona(
             "posix_spawnattr_set_persona_np");
-    if (set_persona_fn == NULL) {
+    posix_spawnattr_set_persona_uid_np_fn set_uid_fn =
+        (posix_spawnattr_set_persona_uid_np_fn)agentbox_dlsym_persona(
+            "posix_spawnattr_set_persona_uid_np");
+    posix_spawnattr_set_persona_gid_np_fn set_gid_fn =
+        (posix_spawnattr_set_persona_gid_np_fn)agentbox_dlsym_persona(
+            "posix_spawnattr_set_persona_gid_np");
+    
+    if (set_persona_fn == NULL || set_uid_fn == NULL || set_gid_fn == NULL) {
         errno = ENOSYS;
         return -1;
     }
 
-    // Create stdout pipe
-    int stdout_pipe[2];
-    if (pipe(stdout_pipe) != 0) {
-        return -1;
-    }
-
-    // Create stderr pipe
-    int stderr_pipe[2];
+    // Create pipes
+    int stdout_pipe[2], stderr_pipe[2];
+    if (pipe(stdout_pipe) != 0) return -1;
     if (pipe(stderr_pipe) != 0) {
-        close(stdout_pipe[0]);
-        close(stdout_pipe[1]);
+        close(stdout_pipe[0]); close(stdout_pipe[1]);
         return -1;
     }
 
     posix_spawnattr_t attr;
     posix_spawnattr_init(&attr);
 
-    // Set persona
-    int ret = set_persona_fn(&attr, (uid_t)persona_id, POSIX_SPAWN_PERSONA_FLAGS_ROOT);
-    if (ret != 0) {
-        posix_spawnattr_destroy(&attr);
-        close(stdout_pipe[0]); close(stdout_pipe[1]);
-        close(stderr_pipe[0]); close(stderr_pipe[1]);
-        errno = (ret < 0) ? -ret : ret;
-        return -1;
-    }
+    // TrollStore approach: SYSTEM persona (99) + OVERRIDE + root UID/GID
+    // This matches TSUtil.m spawnRoot() exactly
+    int ret = set_persona_fn(&attr, POSIX_SPAWN_PERSONA_SYSTEM, POSIX_SPAWN_PERSONA_FLAGS_OVERRIDE);
+    if (ret != 0) goto cleanup_attr;
+    ret = set_uid_fn(&attr, 0);  // root
+    if (ret != 0) goto cleanup_attr;
+    ret = set_gid_fn(&attr, 0);  // wheel
+    if (ret != 0) goto cleanup_attr;
 
-    // Configure file actions: redirect stdout and stderr to pipes
+    // File actions
     posix_spawn_file_actions_t file_actions;
     posix_spawn_file_actions_init(&file_actions);
     posix_spawn_file_actions_addclose(&file_actions, stdout_pipe[0]);
@@ -209,9 +223,7 @@ int agentbox_spawn_with_persona(
     posix_spawn_file_actions_addclose(&file_actions, stdout_pipe[1]);
     posix_spawn_file_actions_addclose(&file_actions, stderr_pipe[1]);
 
-    // Set spawn flags
-    short flags = POSIX_SPAWN_CLOEXEC_DEFAULT;
-    posix_spawnattr_setflags(&attr, flags);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT);
 
     pid_t pid = 0;
     ret = posix_spawn(&pid, binary_path, &file_actions, &attr, argv, envp);
@@ -219,7 +231,6 @@ int agentbox_spawn_with_persona(
     posix_spawn_file_actions_destroy(&file_actions);
     posix_spawnattr_destroy(&attr);
 
-    // Close write ends in parent
     close(stdout_pipe[1]);
     close(stderr_pipe[1]);
 
@@ -234,6 +245,13 @@ int agentbox_spawn_with_persona(
     *out_stderr_fd = stderr_pipe[0];
     *out_pid = pid;
     return 0;
+
+cleanup_attr:
+    posix_spawnattr_destroy(&attr);
+    close(stdout_pipe[0]); close(stdout_pipe[1]);
+    close(stderr_pipe[0]); close(stderr_pipe[1]);
+    errno = (ret < 0) ? -ret : ret;
+    return -1;
 }
 
 int agentbox_spawn_root_simple(
