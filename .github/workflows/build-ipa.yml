@@ -173,23 +173,19 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs + resolve symlinks
+          # Extract rootfs (build #85's working recipe)
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
           if [ -f "$ROOTFS_TGZ" ]; then
-            TMPROOT="/tmp/agentbox-rootfs-$$"
-            mkdir -p "$TMPROOT" Payload/AgentBox.app/rootfs
-            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C "$TMPROOT/"
-            cd "$TMPROOT"
-            # Replace symlinks with actual files using pax -L
-            find . -depth -print | pax -rwd -L "$GITHUB_WORKSPACE/Payload/AgentBox.app/rootfs/"
-            cd "$GITHUB_WORKSPACE"
-            rm -rf "$TMPROOT"
+            mkdir -p Payload/AgentBox.app/rootfs
+            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/
             echo "=== rootfs/bin/ ==="
-            ls -la Payload/AgentBox.app/rootfs/bin/ 2>/dev/null | head -12
+            ls -la Payload/AgentBox.app/rootfs/bin/ | head -10
             echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
             echo "WARN: $ROOTFS_TGZ not found"
           fi
+          cp src/Entitlements.plist Payload/AgentBox.app/
+          zip -ry AgentBox-unsigned.ipa Payload/ -q
           cp src/Entitlements.plist Payload/AgentBox.app/
           zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
