@@ -179,8 +179,8 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 构建 opa334 的 ldid 并签名（非致命：失败退回到未签名）──
-      - name: Build opa334 ldid + sign
+      # ── 12. 诊断 Mach-O + zsign 签名 ──
+      - name: Diagnose & sign (zsign + ldid fallback)
         env:
           SDKROOT: ""
         run: |
@@ -190,31 +190,65 @@ jobs:
           BIN=Payload/AgentBox.app/AgentBox
           SIGNED=false
 
-          # Build opa334's ldid from source
-          git clone --depth 1 --branch v2.1.5-procursus7-new \
-            https://github.com/opa334/ldid.git /tmp/ldid-334
-          cd /tmp/ldid-334
-          brew install openssl@3 libplist pkg-config 2>/dev/null
-          make -j$(sysctl -n hw.logicalcpu) \
-            OPENSSL_PREFIX=$(brew --prefix openssl@3) \
-            LIBPLIST_PREFIX=$(brew --prefix libplist) 2>/dev/null
-          cp ldid /usr/local/bin/ldid-334
+          # ── 诊断：看 Mach-O 结构 ──
+          echo "=== Mach-O header ==="
+          file "$BIN" || echo "(file cmd failed)"
+          otool -h "$BIN" 2>/dev/null | head -10 || echo "(otool failed)"
+          otool -l "$BIN" 2>/dev/null | grep -E "cmd |cmdsize" | head -30 || echo "(otool -l failed)"
+          echo "=== End diagnostics ==="
+
+          # ── 方法 1: zsign (全新 Mach-O 解析器) ──
+          echo "=== zsign ==="
+          git clone --depth 1 https://github.com/zhlynn/zsign.git /tmp/zsign
+          cd /tmp/zsign/build/macos
+          brew install pkg-config openssl 2>/dev/null
+          make clean && make 2>/dev/null && {
+            cp zsign /usr/local/bin/zsign
+            cd "$GITHUB_WORKSPACE"
+            # zsign -a = ad-hoc, -e = entitlements plist
+            if zsign -a -e src/Entitlements.plist -o /tmp/signed.ipa AgentBox-unsigned.ipa 2>&1; then
+              if unzip -q /tmp/signed.ipa -d /tmp/signed_check/ 2>/dev/null; then
+                if codesign -d --entitlements - /tmp/signed_check/Payload/AgentBox.app/AgentBox 2>/dev/null | grep -q "no-sandbox"; then
+                  echo "ZSIGN: SUCCESS — entitlements embedded!"
+                  cp /tmp/signed.ipa AgentBox.ipa
+                  SIGNED=true
+                fi
+                rm -rf /tmp/signed_check
+              fi
+            fi
+          } || echo "zsign build or sign failed"
           cd "$GITHUB_WORKSPACE"
 
-          # Try signing
-          echo "=== ldid-334 ==="
-          if ldid-334 -S src/Entitlements.plist "$BIN" 2>/dev/null; then
-            codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && SIGNED=true
+          # ── 方法 2: ldid-334 回退 ──
+          if [ "$SIGNED" = false ]; then
+            echo "=== ldid-334 fallback ==="
+            git clone --depth 1 --branch v2.1.5-procursus7-new \
+              https://github.com/opa334/ldid.git /tmp/ldid-334
+            cd /tmp/ldid-334
+            brew install openssl@3 libplist pkg-config 2>/dev/null
+            make -j$(sysctl -n hw.logicalcpu) \
+              OPENSSL_PREFIX=$(brew --prefix openssl@3) \
+              LIBPLIST_PREFIX=$(brew --prefix libplist) 2>/dev/null
+            cp ldid /usr/local/bin/ldid-334
+            cd "$GITHUB_WORKSPACE"
+            if ldid-334 -S src/Entitlements.plist "$BIN" 2>/dev/null; then
+              if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
+                echo "ldid-334: SUCCESS"
+                SIGNED=true
+              fi
+            fi
           fi
 
+          # ── 打包 ──
           if [ "$SIGNED" = true ]; then
-            echo "SIGNED: entitlements verified"
+            echo "=== IPA signed with entitlements ==="
+            # If zsign already created AgentBox.ipa, skip
+            [ ! -f AgentBox.ipa ] && zip -r AgentBox.ipa Payload/ -q
           else
-            echo "UNSIGNED: ldid-334 also cannot parse this Mach-O"
+            echo "=== All signing methods failed, releasing unsigned ==="
+            zip -r AgentBox.ipa Payload/ -q 2>/dev/null
           fi
-
-          zip -r AgentBox.ipa Payload/ -q
-          rm -rf Payload
+          rm -rf Payload /tmp/signed.ipa /tmp/zsign /tmp/ldid-334
           echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 13. 发布 Release ──
