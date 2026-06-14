@@ -360,14 +360,6 @@ struct TerminalStatusView: View {
             return "❌ \(msg)\n\(debugInfo)"
         }
     }
-        case .booting:
-            return "actuate_kernel() 调用中，\nLinux 内核正在启动..."
-        case .ready:
-            return "ish-arm64 Linux 引擎就绪。\n可在 guest 中执行 shell 命令。"
-        case .error(let msg):
-            return msg
-        }
-    }
 
     // MARK: - Actions
 
