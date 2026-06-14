@@ -179,40 +179,39 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 构建 opa334 的 ldid 并签名 ──
+      # ── 12. 构建 opa334 的 ldid 并签名（非致命：失败退回到未签名）──
       - name: Build opa334 ldid + sign
         env:
-          SDKROOT: ""   # ldid 是 macOS 工具
+          SDKROOT: ""
         run: |
-          set -e
-          git clone --depth 1 --branch v2.1.5-procursus7-new \
-            https://github.com/opa334/ldid.git /tmp/ldid-334
-          cd /tmp/ldid-334
-          brew install openssl@3 libplist pkg-config
-          make -j$(sysctl -n hw.logicalcpu) \
-            OPENSSL_PREFIX=$(brew --prefix openssl@3) \
-            LIBPLIST_PREFIX=$(brew --prefix libplist)
-          cp ldid /usr/local/bin/ldid-334
-          echo "ldid-334 build OK"
-
-          # Sign the binary
+          set +e
           rm -rf Payload
           unzip -q "$GITHUB_WORKSPACE/AgentBox-unsigned.ipa"
           BIN=Payload/AgentBox.app/AgentBox
+          SIGNED=false
 
-          echo "=== opa334 ldid -S ==="
-          if ldid-334 -S "$GITHUB_WORKSPACE/src/Entitlements.plist" "$BIN" 2>&1; then
-            echo "=== ldid-334 SUCCESS ==="
-          else
-            echo "ldid-334 -S failed, trying with -s then -S..."
-            ldid-334 -s "$BIN" 2>/dev/null || true
-            ldid-334 -S "$GITHUB_WORKSPACE/src/Entitlements.plist" "$BIN" 2>&1 || true
-          fi
+          # Build opa334's ldid from source
+          git clone --depth 1 --branch v2.1.5-procursus7-new \
+            https://github.com/opa334/ldid.git /tmp/ldid-334
+          cd /tmp/ldid-334
+          brew install openssl@3 libplist pkg-config 2>/dev/null
+          make -j$(sysctl -n hw.logicalcpu) \
+            OPENSSL_PREFIX=$(brew --prefix openssl@3) \
+            LIBPLIST_PREFIX=$(brew --prefix libplist) 2>/dev/null
+          cp ldid /usr/local/bin/ldid-334
           cd "$GITHUB_WORKSPACE"
 
-          # Verify entitlements
-          echo "=== Verify ==="
-          codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && echo "ENTITLEMENTS: PRESENT" || echo "ENTITLEMENTS: NOT FOUND"
+          # Try signing
+          echo "=== ldid-334 ==="
+          if ldid-334 -S src/Entitlements.plist "$BIN" 2>/dev/null; then
+            codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && SIGNED=true
+          fi
+
+          if [ "$SIGNED" = true ]; then
+            echo "SIGNED: entitlements verified"
+          else
+            echo "UNSIGNED: ldid-334 also cannot parse this Mach-O"
+          fi
 
           zip -r AgentBox.ipa Payload/ -q
           rm -rf Payload
