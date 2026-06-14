@@ -18,8 +18,13 @@
 #include <spawn.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <errno.h>
+
+// ish-arm64 type aliases (used by kernel APIs, compatible with standard types)
+typedef unsigned int mode_t_;   // matches ish dword_t
+typedef unsigned int dev_t_;    // matches ish dword_t
 #include <unistd.h>
 #include <errno.h>
 #include <sys/wait.h>
@@ -400,14 +405,14 @@ int agentbox_fork_root_spawn(
 // These are resolved at link time; declared here as extern to avoid
 // pulling in every internal kernel header.
 
-extern struct fs fakefs;                             // libfakefs.a: fake filesystem instance
+extern struct fs_ops fakefs;                         // libfakefs.a: fake filesystem ops
 
-extern int  mount_root(struct fs *fs, const char *path); // libfakefs.a: mount fakefs at path
+extern int  mount_root(struct fs_ops *fs, const char *path); // libfakefs.a: mount fakefs at path
 extern void FsInitialize(void);                          // libish: init filesystem layer
 extern void become_first_process(void);                   // libish: make current task init (PID 1)
 
-extern int  generic_mknodat(struct fd *at, const char *path, mode_t_ mode, dev_t_ dev);
-extern int  generic_mkdirat(struct fd *at, const char *path, mode_t_ mode);
+extern int  generic_mknodat(void *at, const char *path, mode_t_ mode, dev_t_ dev);
+extern int  generic_mkdirat(void *at, const char *path, mode_t_ mode);
 
 #define TTY_CONSOLE_MAJOR 4
 
