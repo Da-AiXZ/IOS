@@ -302,9 +302,9 @@ final class ISHEngine: ObservableObject {
 /// 3. 幂等：已解压则跳过
 final class RootFSManager: @unchecked Sendable {
 
-    /// RootFS 在 .app bundle 内（CI 预解压）。
+    /// RootFS 在 .app/rootfs/data/ 内（CI 预解压到 data/ 子目录，fakefs_mount 要求路径以 "data" 结尾）。
     private var targetRoot: URL {
-        Bundle.main.bundleURL.appendingPathComponent("rootfs", isDirectory: true)
+        Bundle.main.bundleURL.appendingPathComponent("rootfs/data", isDirectory: true)
     }
 
     /// rootfs 解压后的完整路径。

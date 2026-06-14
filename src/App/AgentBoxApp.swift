@@ -36,8 +36,8 @@ struct AgentBoxApp: App {
     /// 若 rootfs 资源未捆绑（开发阶段），跳过初始化，
     /// 其他模块（SpawnRoot、FileSystemAccess）仍可独立使用。
     private func initializeEngine() async {
-        // RootFS is pre-extracted at CI build time into .app/rootfs/
-        let rootfsDir = Bundle.main.bundleURL.appendingPathComponent("rootfs", isDirectory: true)
+        // RootFS is pre-extracted at CI build time into .app/rootfs/data/
+        let rootfsDir = Bundle.main.bundleURL.appendingPathComponent("rootfs/data", isDirectory: true)
         let bbPath = rootfsDir.appendingPathComponent("bin/busybox")
         guard FileManager.default.fileExists(atPath: bbPath.path) else {
             print("[AgentBoxApp] rootfs/bin/busybox not found at \(bbPath.path)")
