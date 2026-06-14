@@ -112,9 +112,11 @@ jobs:
       - name: Ninja build
         working-directory: libish
         run: |
-          ninja -C build_arm64 libish.a libish_emu.a libfakefs.a
+          ninja -C build_arm64 libish.a libish_emu.a libfakefs.a fakefsify
           echo "=== Libraries built ==="
           ls -lh build_arm64/libish.a build_arm64/libish_emu.a build_arm64/libfakefs.a
+          echo "=== fakefsify tool ==="
+          ls -lh build_arm64/tools/fakefsify
 
       - name: Verify libraries
         run: |
@@ -173,16 +175,17 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs into data/ subdir (fakefs_mount requires path ending in "data")
+          # Convert rootfs with fakefsify (fakefs_import → SQLite DB + data/ dir)
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
-          if [ -f "$ROOTFS_TGZ" ]; then
-            mkdir -p Payload/AgentBox.app/rootfs/data
-            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/data/
-            echo "=== rootfs/data/bin/ ==="
-            ls -la Payload/AgentBox.app/rootfs/data/bin/ | head -10
+          FAKEFSIFY="libish/build_arm64/tools/fakefsify"
+          if [ -f "$ROOTFS_TGZ" ] && [ -f "$FAKEFSIFY" ]; then
+            mkdir -p Payload/AgentBox.app/rootfs
+            "$FAKEFSIFY" "$ROOTFS_TGZ" Payload/AgentBox.app/rootfs/
+            echo "=== rootfs (fakefs format) ==="
+            find Payload/AgentBox.app/rootfs/ -maxdepth 2 -type f -o -type d | sort | head -30
             echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
-            echo "WARN: $ROOTFS_TGZ not found"
+            echo "WARN: rootfs.tar.gz or fakefsify not found"
           fi
           cp src/Entitlements.plist Payload/AgentBox.app/
           zip -ry AgentBox-unsigned.ipa Payload/ -q

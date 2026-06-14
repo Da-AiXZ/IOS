@@ -471,24 +471,13 @@ int agentbox_boot_ish_kernel(const char *root_path) {
 
     fprintf(stderr, "[AGENTBOX] Booting ish kernel, rootfs=%s (real=%s)\n", root_path, real_path);
 
-    // ---- DIAGNOSTIC: skip mount_root, test become_first_process + task_start alone ----
-    // STEP A: test open() on the directory
-    int test_fd = open(real_path, O_DIRECTORY);
-    if (test_fd < 0) {
-        fprintf(stderr, "[AGENTBOX] open(dir) failed: %d (%s)\n", errno, strerror(errno));
-        return -1;
-    }
-    close(test_fd);
-    fprintf(stderr, "[AGENTBOX] open(dir) OK\n");
-
-    // STEP B: mount_root (REAL)
+    // ---- Step 1: Mount fakefs ----
     int err = mount_root(&fakefs, real_path);
     if (err < 0) {
-        fprintf(stderr, "[AGENTBOX] mount_root failed: %d (errno=%d: %s) — TRYING SKIP\n", err, errno, strerror(errno));
-        // Skip mount_root, move on to become_first_process
-    } else {
-        fprintf(stderr, "[AGENTBOX] mount_root OK\n");
+        fprintf(stderr, "[AGENTBOX] mount_root failed: %d\n", err);
+        return err;
     }
+    fprintf(stderr, "[AGENTBOX] mount_root OK\n");
 
     // ---- Step 2: Become PID 1 ----
     become_first_process();
