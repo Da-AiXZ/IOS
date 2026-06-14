@@ -274,6 +274,26 @@ struct TerminalStatusView: View {
                 }
                 .buttonStyle(.bordered)
             }
+
+            // Show test output BELOW the buttons, always visible
+            if !testOutput.isEmpty {
+                ScrollView {
+                    Text(testOutput)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .frame(maxHeight: 200)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Button(action: { testOutput = "" }) {
+                    Label("清空输出", systemImage: "trash")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding()
         .background(Color(.systemBackground))
