@@ -506,3 +506,56 @@ int agentbox_wifsignaled(int status) {
 int agentbox_wtermsig(int status) {
     return WTERMSIG(status);
 }
+
+// MARK: - libarchive tar.gz extraction (no entitlements needed)
+
+#include <archive.h>
+#include <archive_entry.h>
+
+/// Extract a tar.gz file to target_dir using libarchive.
+/// Returns 0 on success, -1 on error (check errno).
+int agentbox_extract_targz(const char *targz_path, const char *target_dir) {
+    struct archive *a = archive_read_new();
+    if (!a) return -1;
+
+    archive_read_support_filter_gzip(a);
+    archive_read_support_format_tar(a);
+
+    if (archive_read_open_filename(a, targz_path, 10240) != ARCHIVE_OK) {
+        archive_read_free(a);
+        return -1;
+    }
+
+    struct archive *ext = archive_write_disk_new();
+    if (!ext) {
+        archive_read_free(a);
+        return -1;
+    }
+
+    archive_write_disk_set_options(ext, ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM);
+    archive_write_disk_set_standard_lookup(ext);
+
+    int ret = ARCHIVE_OK;
+    struct archive_entry *entry;
+    while ((ret = archive_read_next_header(a, &entry)) == ARCHIVE_OK) {
+        // Prepend target_dir to path
+        const char *orig_path = archive_entry_pathname(entry);
+        char full_path[4096];
+        snprintf(full_path, sizeof(full_path), "%s/%s", target_dir, orig_path);
+        archive_entry_set_pathname(entry, full_path);
+
+        ret = archive_write_header(ext, entry);
+        if (ret == ARCHIVE_OK) {
+            const void *buff;
+            size_t size;
+            int64_t offset;
+            while (archive_read_data_block(a, &buff, &size, &offset) == ARCHIVE_OK) {
+                if (archive_write_data_block(ext, buff, size, offset) != ARCHIVE_OK) break;
+            }
+        }
+    }
+
+    archive_write_free(ext);
+    archive_read_free(a);
+    return (ret == ARCHIVE_EOF) ? 0 : -1;
+}

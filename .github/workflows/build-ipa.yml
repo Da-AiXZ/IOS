@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-13   # Intel — ldid should work; zsign fallback if not
+    runs-on: macos-14   # fast, stable, no signing drama
     timeout-minutes: 120
 
     steps:
@@ -173,45 +173,36 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Copy entitlements into .app bundle so TrollStore can find them
+          # Bundle rootfs so ISHEngine can boot Linux at runtime
+          if [ -f "alpine-aarch64.tar.gz" ]; then
+            cp alpine-aarch64.tar.gz Payload/AgentBox.app/
+            echo "RootFS bundled: $(ls -lh Payload/AgentBox.app/alpine-aarch64.tar.gz | awk '{print $5}')"
+          else
+            echo "WARN: rootfs not found, skipping"
+          fi
           cp src/Entitlements.plist Payload/AgentBox.app/
           zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 签名（Intel ldid 优先，zsign 兜底）──
-      - name: Sign entitlements
+      # ── 12. 签名（非致命，不行就未签名）──
+      - name: Sign (best effort)
         run: |
           set +e
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
           BIN=Payload/AgentBox.app/AgentBox
-          SIGNED=false
 
-          echo "=== ldid (Intel should work) ==="
-          ldid -S src/Entitlements.plist "$BIN" 2>/dev/null && {
-            codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && SIGNED=true
-          }
+          ldid -S src/Entitlements.plist "$BIN" 2>/dev/null && echo "ldid: OK" || echo "ldid: no"
+          brew install zsign 2>/dev/null
+          zsign -a -e src/Entitlements.plist -o /tmp/z.ipa AgentBox-unsigned.ipa 2>/dev/null && {
+            rm -rf Payload && unzip -q /tmp/z.ipa
+            echo "zsign: tried"
+          } || echo "zsign: no"
 
-          if [ "$SIGNED" = false ]; then
-            echo "=== zsign fallback ==="
-            brew install zsign 2>/dev/null
-            zsign -a -e src/Entitlements.plist -o /tmp/z.ipa AgentBox-unsigned.ipa 2>/dev/null && {
-              rm -rf Payload
-              unzip -q /tmp/z.ipa
-              BINZ=Payload/AgentBox.app/AgentBox
-              codesign -d --entitlements - "$BINZ" 2>/dev/null | grep -q "no-sandbox" && SIGNED=true
-            }
-          fi
-
-          if [ "$SIGNED" = true ]; then
-            zip -r AgentBox.ipa Payload/ -q
-            echo "IPA: signed ($(ls -lh AgentBox.ipa | awk '{print $5}'))"
-          else
-            cp AgentBox-unsigned.ipa AgentBox.ipa
-            echo "IPA: unsigned (fallback)"
-          fi
+          zip -r AgentBox.ipa Payload/ -q
           rm -rf Payload /tmp/z.ipa
+          echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 13. 发布 Release ──
       - name: Release

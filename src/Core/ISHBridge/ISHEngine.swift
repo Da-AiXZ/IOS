@@ -356,30 +356,13 @@ final class RootFSManager: @unchecked Sendable {
 
     // MARK: - Extraction
 
-    /// 使用 libarchive 解压 tar.gz 文件。
-    ///
-    /// iOS 自带的 libarchive 可通过 `libarchive.tbd` 链接。
-    /// 作为 fallback，也可通过 SpawnRoot 调用系统 `tar` 命令。
+    /// 使用 libarchive C API 解压 tar.gz（不需要 entitlements）。
     private func extractTarGz(at sourceURL: URL) async throws {
-        // Create target directory
         try FileSystemAccess.createDirectory(at: rootfsPath, withIntermediate: true)
 
-        // Approach: Use SpawnRoot to call system tar
-        // This works reliably with no-sandbox entitlement and validates E2E.
-        let tarCommand = """
-        tar -xzf '\(sourceURL.path)' -C '\(rootfsPath)' --strip-components=0
-        """
-
-        do {
-            let result = try SpawnRoot.execute(tarCommand)
-            guard result.success else {
-                let errorDetail = result.stderrString.isEmpty
-                    ? "tar 退出码 \(result.exitCode)"
-                    : result.stderrString.trimmingCharacters(in: .whitespacesAndNewlines)
-                throw EngineError.extractionFailed(underlying: errorDetail)
-            }
-        } catch let error as SpawnError {
-            throw EngineError.extractionFailed(underlying: error.localizedDescription)
+        let result = agentbox_extract_targz(sourceURL.path, rootfsPath)
+        guard result == 0 else {
+            throw EngineError.extractionFailed(underlying: "libarchive extraction failed, errno: \(errno)")
         }
     }
 
