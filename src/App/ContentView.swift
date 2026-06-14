@@ -334,7 +334,8 @@ struct TerminalStatusView: View {
     }
 
     private var statusDetail: String {
-        let rootfsURL = URL(fileURLWithPath: "/tmp/ish-rootfs/data", isDirectory: true)
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let rootfsURL = docs.appendingPathComponent("ish-rootfs/data", isDirectory: true)
         let bbPath = rootfsURL.appendingPathComponent("bin/busybox").path
         let shPath = rootfsURL.appendingPathComponent("bin/sh").path
         let bbExists = FileManager.default.fileExists(atPath: bbPath)

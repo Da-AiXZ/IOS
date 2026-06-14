@@ -214,7 +214,7 @@ final class ISHEngine: ObservableObject {
         }
         let bootResult = shim.bootKernel(rootPath)
         guard bootResult == 0 else {
-            let err = EngineError.kernelBootFailed(reason: "内核启动返回 \(bootResult)")
+            let err = EngineError.kernelBootFailed(reason: "启动返回 \(bootResult) errno=\(errno)")
             state = .error(err.localizedDescription)
             throw err
         }
@@ -300,7 +300,8 @@ final class RootFSManager: @unchecked Sendable {
 
     /// rootfs 在 Documents 中的可写路径。
     private var writableRoot: URL {
-        URL(fileURLWithPath: "/tmp/ish-rootfs", isDirectory: true)
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent("ish-rootfs", isDirectory: true)
     }
 
     /// mount 目标（可写 rootfs 下的 data/ 子目录，符合 fakefs_mount 要求）。

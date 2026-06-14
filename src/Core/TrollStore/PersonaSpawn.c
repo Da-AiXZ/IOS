@@ -471,6 +471,20 @@ int agentbox_boot_ish_kernel(const char *root_path) {
 
     fprintf(stderr, "[AGENTBOX] Booting ish kernel, rootfs=%s (real=%s)\n", root_path, real_path);
 
+    // Diagnostic: try opening the directory ourselves to see if it's accessible
+    int test_fd = open(real_path, O_DIRECTORY);
+    if (test_fd < 0) {
+        fprintf(stderr, "[AGENTBOX] DIAG: open(%s, O_DIRECTORY) failed: %d (%s)\n",
+                real_path, errno, strerror(errno));
+    } else {
+        fprintf(stderr, "[AGENTBOX] DIAG: open(%s, O_DIRECTORY) OK, fd=%d\n", real_path, test_fd);
+        // Write a test file to verify writability
+        if (write(test_fd, "", 0) >= 0) {
+            fprintf(stderr, "[AGENTBOX] DIAG: directory is writable\n");
+        }
+        close(test_fd);
+    }
+
     // ---- Step 1: Mount fakefs ----
     int err = mount_root(&fakefs, real_path);
     if (err < 0) {
