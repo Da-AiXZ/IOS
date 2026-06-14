@@ -135,7 +135,10 @@ jobs:
       - name: XcodeGen generate
         run: |
           xcodegen generate --spec project.yml --quiet
-          echo "Project generated"
+          # Fix: XcodeGen v2.42 generates format 77 (Xcode 16+) even when xcodeVersion=15
+          # Xcode 15.4 requires format 56 (Xcode 14); patch pbxproj objectVersion
+          sed -i '' 's/objectVersion = 77;/objectVersion = 56;/' AgentBox.xcodeproj/project.pbxproj
+          echo "Project generated + format patched to 56"
           ls -lh AgentBox.xcodeproj/project.pbxproj
 
       # ── 10. Xcode 编译 ──
