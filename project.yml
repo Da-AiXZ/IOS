@@ -40,7 +40,6 @@ settings:
     # 链接 ish-arm64 静态库
     OTHER_LDFLAGS: >
       $(inherited)
-      -Wl,-no_adhoc_codesign
       $(SRCROOT)/libish/build_arm64/libish.a
       $(SRCROOT)/libish/build_arm64/libish_emu.a
       $(SRCROOT)/libish/build_arm64/libfakefs.a

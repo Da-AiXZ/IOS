@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-14   # Xcode 15.4 default; ldid compatible (no linker-signed Mach-O)
     timeout-minutes: 120
 
     steps:
@@ -34,10 +34,13 @@ jobs:
           xcode-select -p 2>/dev/null || echo "(not set)"
 
           for candidate in \
-            /Applications/Xcode_16.4.app \
-            /Applications/Xcode-16.4.0.app \
-            /Applications/Xcode_16.app \
-            /Applications/Xcode_16.app; do  # Xcode 16.0 — oldest on runner, no linker-signed
+            /Applications/Xcode_15.4.app \
+            /Applications/Xcode-15.4.0.app \
+            /Applications/Xcode_15.app \
+            /Applications/Xcode_15.3.app \
+            /Applications/Xcode_15.2.app \
+            /Applications/Xcode_16.app; do
+            if [ -d "$candidate" ]; then
             if [ -d "$candidate" ]; then
               echo ">>> Selecting: $candidate"
               sudo xcode-select -s "$candidate/Contents/Developer"
