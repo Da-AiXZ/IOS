@@ -45,6 +45,7 @@ settings:
       $(SRCROOT)/libish/build_arm64/libfakefs.a
       -lsqlite3
       -lz
+      -larchive
     # Swift-ObjC 桥接
     SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/src/Resources/AgentBox-Bridging-Header.h"
     SWIFT_OBJC_INTEROP_MODE: objc
@@ -53,7 +54,7 @@ settings:
       $(inherited)
       $(SRCROOT)/libish
       $(SRCROOT)/libish/app
-      $(SRCROOT)/libish/deps/libarchive/libarchive
+      $(SDKROOT)/usr/include
     # 预处理器定义
     GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) GUEST_ARM64=1"
     SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) GUEST_ARM64"
