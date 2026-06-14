@@ -334,11 +334,32 @@ struct TerminalStatusView: View {
     }
 
     private var statusDetail: String {
+        let rootfsURL = Bundle.main.bundleURL.appendingPathComponent("rootfs")
+        let shPath = rootfsURL.appendingPathComponent("bin/sh").path
+        let shExists = FileManager.default.fileExists(atPath: shPath)
+        
+        let debugInfo = """
+        ─────────────────────
+        .app/rootfs/bin/sh: \(shExists ? "✅ 存在" : "❌ 不存在")
+        rootfs 路径: \(rootfsURL.path)
+        isInitialized: \(engine.isInitialized)
+        当前状态: \(engine.state.description)
+        ─────────────────────
+        """
+        
         switch engine.state {
         case .uninitialized:
-            return "等待 ish-arm64 Linux 引擎初始化。\n请确保 alpine-aarch64.tar.gz 已添加到 Bundle Resources。"
+            return "等待引擎初始化...\n\(debugInfo)"
         case .extracting(let progress):
-            return progress
+            return "\(progress)\n\(debugInfo)"
+        case .booting:
+            return "正在启动 ish Linux 内核...\n\(debugInfo)"
+        case .ready:
+            return "✅ 引擎就绪，可执行 shell 命令。\n\(debugInfo)"
+        case .error(let msg):
+            return "❌ \(msg)\n\(debugInfo)"
+        }
+    }
         case .booting:
             return "actuate_kernel() 调用中，\nLinux 内核正在启动..."
         case .ready:

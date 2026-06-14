@@ -173,13 +173,15 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs into .app bundle at build time (no runtime extraction needed)
+          # Extract rootfs into .app bundle at build time
           if [ -f "alpine-aarch64.tar.gz" ]; then
             mkdir -p Payload/AgentBox.app/rootfs
-            tar -xzf alpine-aarch64.tar.gz -C Payload/AgentBox.app/rootfs/
-            echo "RootFS extracted: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
+            tar -xzf alpine-aarch64.tar.gz --strip-components=1 -C Payload/AgentBox.app/rootfs/
+            echo "=== rootfs structure ==="
+            ls -la Payload/AgentBox.app/rootfs/ | head -15
+            echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
-            echo "WARN: rootfs not found, skipping"
+            echo "WARN: rootfs not found"
           fi
           cp src/Entitlements.plist Payload/AgentBox.app/
           zip -r AgentBox-unsigned.ipa Payload/ -q
