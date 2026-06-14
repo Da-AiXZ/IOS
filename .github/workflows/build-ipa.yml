@@ -173,17 +173,25 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs (tar → cp -RH to convert symlinks to copies)
+          # Extract rootfs (rsync -aL dereferences all symlinks → real files)
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
           if [ -f "$ROOTFS_TGZ" ]; then
             TMPROOT="/tmp/agentbox-rootfs-$$"
             mkdir -p "$TMPROOT" Payload/AgentBox.app/rootfs
             tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C "$TMPROOT/"
-            cp -RH "$TMPROOT/" Payload/AgentBox.app/rootfs/
+            # rsync -aL: archive + convert symlinks to real copies
+            rsync -aL "$TMPROOT/" Payload/AgentBox.app/rootfs/
             rm -rf "$TMPROOT"
-            echo "=== rootfs/bin/ ==="
+            echo "=== rootfs/bin/ (should show regular files, not symlinks) ==="
             ls -la Payload/AgentBox.app/rootfs/bin/ | head -10
-            echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
+            ROOTFS_KB=$(du -sk Payload/AgentBox.app/rootfs/ | awk '{print $1}')
+            echo "RootFS size: ${ROOTFS_KB}K"
+            # Verify busybox is a real file with size > 0
+            if [ -f Payload/AgentBox.app/rootfs/bin/busybox ] && [ -s Payload/AgentBox.app/rootfs/bin/busybox ]; then
+              echo "busybox: OK ($(ls -lh Payload/AgentBox.app/rootfs/bin/busybox | awk '{print $5}'))"
+            else
+              echo "ERROR: busybox missing or empty!"
+            fi
           else
             echo "WARN: $ROOTFS_TGZ not found"
           fi

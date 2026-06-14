@@ -185,6 +185,26 @@ final class ISHEngine: ObservableObject {
         // ---- Phase 2: Boot Kernel ----
         state = .booting
 
+        // ---- Safety: verify rootfs integrity before touching C boot code ----
+        let bbPath = (rootPath as NSString).appendingPathComponent("bin/busybox")
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: bbPath, isDirectory: &isDir),
+              !isDir.boolValue else {
+            let err = EngineError.rootfsCorrupted(
+                reason: "busybox 不是有效文件: \(bbPath)")
+            state = .error(err.localizedDescription)
+            throw err
+        }
+        // Check busybox has reasonable size (>100KB)
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: bbPath),
+           let size = attrs[.size] as? Int64, size < 100_000 {
+            let err = EngineError.rootfsCorrupted(
+                reason: "busybox 大小异常: \(size) bytes")
+            state = .error(err.localizedDescription)
+            throw err
+        }
+        print("[ISHEngine] rootfs 完整性检查通过 (busybox OK)")
+
         // Initialize ish environment
         let shim = ISHAppShim.current
         guard shim.initISH() else {
