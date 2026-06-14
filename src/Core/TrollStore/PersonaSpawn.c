@@ -444,6 +444,11 @@ extern void (*exit_hook)(struct task *task, int code); // libish: called when a 
 /// Defined in AgentBoxAppDelegate.m (posts ProcessExitedNotification).
 extern void agentbox_exit_hook(struct task *task, int code);
 
+// dev_t construction helper (matches ish's dev_make macro)
+static inline dev_t_ dev_make(int major, int minor) {
+    return (dev_t_)(((major) << 8) | (minor));
+}
+
 int agentbox_boot_ish_kernel(const char *root_path) {
     if (root_path == NULL) {
         errno = EINVAL;
@@ -509,11 +514,6 @@ int agentbox_boot_ish_kernel(const char *root_path) {
     fprintf(stderr, "[AGENTBOX] task_start() called — kernel live\n");
 
     return 0;
-}
-
-// dev_t construction helper (matches ish's dev_make macro)
-static inline dev_t_ dev_make(int major, int minor) {
-    return (dev_t_)(((major) << 8) | (minor));
 }
 
 // MARK: - waitpid Macro Wrappers (Swift can't call C macros directly)
