@@ -125,6 +125,8 @@ actor ISHShellBridge {
         }
         initSem.wait()
         guard engineReady else {
+            throw ISHShellError.engineNotInitialized
+        }
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw ISHShellError.commandEmpty
