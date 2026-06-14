@@ -179,43 +179,33 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
+          # Copy entitlements into .app bundle so TrollStore can find them
+          cp src/Entitlements.plist Payload/AgentBox.app/
           zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 签名（ldid 处理 Xcode 16.4 二进制有兼容问题，用 codesign 备份）──
-      - name: Sign with entitlements
+      # ── 12. 嵌入 entitlements（用 ldid，兼容性问题已知，失败则退回到未签名）──
+      - name: ldid fakesign
         run: |
+          set -e
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
-          BIN=Payload/AgentBox.app/AgentBox
-          SIGNED=false
-
-          # 方法 1: ldid（首选，TrollStore 原生工具）
-          if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
-            echo "=== ldid SUCCESS ==="
+          # Try ldid from brew first
+          if ldid -S src/Entitlements.plist Payload/AgentBox.app/AgentBox 2>/dev/null; then
+            echo "ldid OK"
             SIGNED=true
           else
-            echo "=== ldid FAILED, trying codesign ==="
+            echo "ldid failed — releasing unsigned, TrollStore will handle"
+            SIGNED=false
           fi
-
-          # 方法 2: codesign ad-hoc（fallback，Xcode 内置）
-          if [ "$SIGNED" = false ]; then
-            codesign --force --sign - \
-              --entitlements src/Entitlements.plist \
-              --timestamp=none \
-              Payload/AgentBox.app 2>&1 && SIGNED=true || echo "codesign also failed"
-          fi
-
           if [ "$SIGNED" = true ]; then
-            zip -r AgentBox.ipa Payload/ -q
-            echo "Signed IPA: $(ls -lh AgentBox.ipa)"
+            cd Payload && zip -r ../AgentBox.ipa . -q && cd ..
           else
             cp AgentBox-unsigned.ipa AgentBox.ipa
-            echo "WARNING: Released unsigned IPA (signing failed)"
-            ls -lh AgentBox.ipa
           fi
           rm -rf Payload
+          echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 14. 发布 Release ──
       - name: Release
