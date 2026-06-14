@@ -179,45 +179,45 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. zsign 签名 ──
+      # ── 12. zsign 签名（brew 预编译版）──
       - name: zsign entitlements
         run: |
           set +e
-          echo "=== zsign ==="
-          git clone --depth 1 https://github.com/zhlynn/zsign.git /tmp/zsign
-          cd /tmp/zsign/build/macos
-          brew install pkg-config openssl 2>/dev/null
-          make -j$(sysctl -n hw.logicalcpu) 2>&1 | tail -2
-          cp zsign /usr/local/bin/zsign
-          cd "$GITHUB_WORKSPACE"
+          echo "=== brew install zsign ==="
+          brew install zsign 2>&1 | tail -3
+          echo "zsign version: $(zsign -v 2>/dev/null || echo 'unknown')"
 
-          BIN=Payload/AgentBox.app/AgentBox
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
+          BIN=Payload/AgentBox.app/AgentBox
 
-          # MACH-O diagnostics
-          echo "=== Mach-O type ==="
+          # Mach-O diagnostics
+          echo "=== Binary type ==="
           file "$BIN"
-          otool -h "$BIN" 2>/dev/null | head -5
 
-          # zsign: ad-hoc + entitlements
-          if zsign -a -e src/Entitlements.plist -o /tmp/zsigned.ipa AgentBox-unsigned.ipa 2>&1; then
+          # zsign -a = ad-hoc, -e = entitlements
+          echo "=== zsign -a -e ==="
+          if zsign -a -e src/Entitlements.plist -o /tmp/zsigned.ipa AgentBox-unsigned.ipa 2>&1 | tail -15; then
             if unzip -q /tmp/zsigned.ipa -d /tmp/zcheck/ 2>/dev/null; then
-              if codesign -d --entitlements - /tmp/zcheck/Payload/AgentBox.app/AgentBox 2>/dev/null | grep -q "no-sandbox"; then
+              ZBIN=/tmp/zcheck/Payload/AgentBox.app/AgentBox
+              if codesign -d --entitlements - "$ZBIN" 2>/dev/null | grep -q "no-sandbox"; then
                 echo "ZSIGN: ENTITLEMENTS EMBEDDED!"
                 cp /tmp/zsigned.ipa AgentBox.ipa
               else
-                echo "ZSIGN: signed but no entitlements detected"
+                echo "ZSIGN: no entitlements found in signed binary"
               fi
               rm -rf /tmp/zcheck
             fi
+          else
+            echo "ZSIGN: command failed"
           fi
 
+          # Fallback
           if [ ! -f AgentBox.ipa ]; then
-            echo "ZSIGN: failed, falling back to unsigned"
+            echo "FALLBACK: unsigned IPA"
             zip -r AgentBox.ipa Payload/ -q
           fi
-          rm -rf Payload /tmp/zsigned.ipa /tmp/zsign
+          rm -rf Payload /tmp/zsigned.ipa
           echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 13. 发布 Release ──
