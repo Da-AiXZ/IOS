@@ -194,22 +194,31 @@ jobs:
           BIN=Payload/AgentBox.app/AgentBox
           SIGNED=false
 
-          # codesign 只签二进制（不签整个 .app，避免闪退）
-          echo "=== codesign ==="
-          if codesign --force --sign - \
-            --entitlements src/Entitlements.plist \
-            "$BIN" 2>&1; then
-            echo "codesign OK"
+          # 方案 1: ldid（TrollStore 标准方式）
+          echo "=== ldid ==="
+          ldid -S src/Entitlements.plist "$BIN" 2>&1 || true
+          # 验证 entitlements 是否真嵌入了
+          if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
+            echo "ldid OK (entitlements verified)"
             SIGNED=true
           else
-            echo "codesign failed, trying ldid"
-            if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
-              echo "ldid OK"
+            echo "ldid did not embed entitlements"
+          fi
+
+          # 方案 2: codesign (ad-hoc, 可能闪退但用于验证 ldid 是否可用)
+          if [ "$SIGNED" = false ]; then
+            echo "=== codesign ==="
+            # Try with --preserve-metadata to keep existing entitlements
+            codesign --force --sign - \
+              --entitlements src/Entitlements.plist \
+              --preserve-metadata=entitlements \
+              "$BIN" 2>&1
+            if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
+              echo "codesign OK"
               SIGNED=true
             fi
           fi
 
-          # 打包 IPA — 必须用 Payload/ 前缀，否则 TrollStore 报 301
           if [ "$SIGNED" = true ]; then
             zip -r AgentBox.ipa Payload/ -q
             echo "Signed IPA: $(ls -lh AgentBox.ipa)"
