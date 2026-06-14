@@ -261,17 +261,9 @@ final class ISHEngine: ObservableObject {
 
         // Verify rootfs bin/busybox exists (Alpine uses symlinks from busybox)
         let bbPath = (rootfsPath as NSString).appendingPathComponent("bin/busybox")
-        guard FileSystemAccess.fileExists(at: bbPath) else {
+        guard FileManager.default.fileExists(atPath: bbPath) else {
             throw EngineError.rootfsCorrupted(
                 reason: "rootfs 中未找到 bin/busybox: \(bbPath)"
-            )
-        }
-
-        // Verify /etc/passwd exists (another critical file)
-        let passwdPath = (rootfsPath as NSString).appendingPathComponent("etc/passwd")
-        guard FileSystemAccess.fileExists(at: passwdPath) else {
-            throw EngineError.rootfsCorrupted(
-                reason: "rootfs 中未找到 /etc/passwd: \(passwdPath)"
             )
         }
 
@@ -376,32 +368,17 @@ final class RootFSManager: @unchecked Sendable {
 
     // MARK: - Verification
 
-    /// 验证解压后的 rootfs 包含关键文件。
+    /// 验证 rootfs 的核心文件（只检查 busybox 本体，软链接由 Linux VFS 解析）。
     private func verifyRootFS() throws {
-        let requiredFiles = [
-            "bin/sh",
-            "etc/passwd",
-            "etc/alpine-release",
-            "lib/ld-musl-aarch64.so.1",
-            "usr/bin/env",
-        ]
-
-        var missingFiles: [String] = []
-
-        for file in requiredFiles {
-            let fullPath = (rootfsPath as NSString).appendingPathComponent(file)
-            if !FileManager.default.fileExists(atPath: fullPath) {
-                missingFiles.append(file)
-            }
+        let bbPath = (rootfsPath as NSString).appendingPathComponent("bin/busybox")
+        guard FileManager.default.fileExists(atPath: bbPath) else {
+            throw EngineError.rootfsCorrupted(reason: "bin/busybox 不存在: \(bbPath)")
         }
-
-        guard missingFiles.isEmpty else {
-            throw EngineError.rootfsCorrupted(
-                reason: "缺少关键文件: \(missingFiles.joined(separator: ", "))"
-            )
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: bbPath),
+           let size = attrs[.size] as? Int64, size < 100_000 {
+            throw EngineError.rootfsCorrupted(reason: "bin/busybox 大小异常: \(size) bytes")
         }
-
-        print("[RootFSManager] RootFS 验证通过: 所有关键文件存在")
+        print("[RootFSManager] RootFS 验证通过 (busybox OK)")
     }
 }
 
