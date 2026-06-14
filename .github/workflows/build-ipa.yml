@@ -37,8 +37,7 @@ jobs:
             /Applications/Xcode_16.4.app \
             /Applications/Xcode-16.4.0.app \
             /Applications/Xcode_16.app \
-            /Applications/Xcode.app \
-            $(ls -dt /Applications/Xcode*.app 2>/dev/null | head -1); do
+            /Applications/Xcode_16.app; do  # Xcode 16.0 — oldest on runner, no linker-signed
             if [ -d "$candidate" ]; then
               echo ">>> Selecting: $candidate"
               sudo xcode-select -s "$candidate/Contents/Developer"
@@ -185,34 +184,30 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 嵌入 entitlements + 兼容签名 ──
-      - name: Inject entitlements
+      # ── 12. ldid 注入 entitlements ──
+      - name: ldid entitlements
         run: |
           set -e
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
           BIN=Payload/AgentBox.app/AgentBox
 
-          # 用 codesign 嵌入 DER entitlements，但把 ad-hoc 签名写到单独文件
-          echo "=== codesign embed entitlements (detached sig) ==="
-          codesign --force --sign - \
-            --entitlements src/Entitlements.plist \
-            --detached /tmp/adhoc.sig \
-            "$BIN" 2>&1
-
-          # 移除 ad-hoc 签名（保留 DER entitlements 在 binary 里）
-          codesign --remove-signature "$BIN" 2>&1 || true
-
-          # 用 ldid 做 TrollStore 兼容的伪签名
-          echo "=== ldid pseudo-sign ==="
-          ldid -s "$BIN" 2>&1 || true
-
-          # 验证 entitlements 是否保留
-          if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
-            echo "SUCCESS: entitlements present + TrollStore-compatible sig"
+          echo "=== ldid -S (entitlements) ==="
+          if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
+            echo "ldid OK"
+          elif which ldid2 >/dev/null 2>&1; then
+            echo "ldid failed, trying ldid2..."
+            ldid2 -S src/Entitlements.plist "$BIN" 2>&1
           else
-            echo "FAILED: entitlements lost after remove-signature"
+            echo "ldid FAILED"
             exit 1
+          fi
+
+          # Verify
+          if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
+            echo "VERIFIED: entitlements present"
+          else
+            echo "WARN: cannot verify entitlements"
           fi
 
           zip -r AgentBox.ipa Payload/ -q
