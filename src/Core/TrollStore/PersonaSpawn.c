@@ -509,8 +509,8 @@ int agentbox_wtermsig(int status) {
 
 // MARK: - libarchive tar.gz extraction (no entitlements needed)
 
-#include <archive.h>
-#include <archive_entry.h>
+#include "archive.h"
+#include "archive_entry.h"
 
 /// Extract a tar.gz file to target_dir using libarchive.
 /// Returns 0 on success, -1 on error (check errno).
