@@ -85,7 +85,8 @@ actor ISHShellBridge {
 
             if pid < 0 {
                 let reason: String
-                switch pid {
+                let code = Int(pid)
+                switch code {
                 case ISHShellExecutorError.processCreationFailed.rawValue:
                     reason = "进程创建失败"
                 case ISHShellExecutorError.execFailed.rawValue:
@@ -116,9 +117,14 @@ actor ISHShellBridge {
     /// - Returns: ``ISHShellResult``。
     /// - Throws: ``ISHShellError``。
     func executeSync(_ command: String, timeout: TimeInterval = 60) throws -> ISHShellResult {
-        guard ISHEngine.shared.isInitialized else {
-            throw ISHShellError.engineNotInitialized
+        let initSem = DispatchSemaphore(value: 0)
+        var engineReady = false
+        Task { @MainActor in
+            engineReady = ISHEngine.shared.isInitialized
+            initSem.signal()
         }
+        initSem.wait()
+        guard engineReady else {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             throw ISHShellError.commandEmpty
