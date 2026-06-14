@@ -173,13 +173,15 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs into .app bundle (follow symlinks: -h)
+          # Extract rootfs (tar → cp -RH to convert symlinks to copies)
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
           if [ -f "$ROOTFS_TGZ" ]; then
-            mkdir -p Payload/AgentBox.app/rootfs
-            tar -xzhf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/
-            echo "=== rootfs structure ==="
-            ls -la Payload/AgentBox.app/rootfs/ | head -15
+            TMPROOT="/tmp/agentbox-rootfs-$$"
+            mkdir -p "$TMPROOT" Payload/AgentBox.app/rootfs
+            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C "$TMPROOT/"
+            cp -RH "$TMPROOT/" Payload/AgentBox.app/rootfs/
+            rm -rf "$TMPROOT"
+            echo "=== rootfs/bin/ ==="
             ls -la Payload/AgentBox.app/rootfs/bin/ | head -10
             echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
