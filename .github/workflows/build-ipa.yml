@@ -188,49 +188,31 @@ jobs:
       # ── 12. 嵌入 entitlements ──
       - name: Inject entitlements
         run: |
-          set +e
-          rm -rf Payload Signed
+          set -e
+          rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
           BIN=Payload/AgentBox.app/AgentBox
           SIGNED=false
 
-          # 方案 1: brew ldid（去掉 stderr 静默，看真实错误）
-          echo "=== Trying brew ldid ==="
-          if ldid -S src/Entitlements.plist "$BIN" 2>&1 | tail -3; then
-            echo "ldid SUCCESS"
+          # 方案 1: codesign（已验证能注入 entitlements，TrollStore 可识别）
+          echo "=== codesign ==="
+          if codesign --force --sign - \
+            --entitlements src/Entitlements.plist \
+            "$BIN" 2>&1; then
+            echo "codesign OK"
             SIGNED=true
           else
-            echo "ldid FAILED"
+            echo "codesign failed: $?"
           fi
 
-          # 方案 2: ldid 先 pseudo-sign 再注入 entitlements
+          # 方案 2: ldid（fallback，Xcode 16.4 兼容性已知有问题）
           if [ "$SIGNED" = false ]; then
-            echo "=== Trying ldid -s then -S ==="
-            cp AgentBox-unsigned.ipa AgentBox-tmp.ipa
-            rm -rf Payload
-            unzip -q AgentBox-tmp.ipa
-            ldid -s Payload/AgentBox.app/AgentBox 2>/dev/null
-            if ldid -S src/Entitlements.plist Payload/AgentBox.app/AgentBox 2>&1 | tail -3; then
-              echo "ldid -s + -S SUCCESS"
+            echo "=== ldid fallback ==="
+            if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
+              echo "ldid OK"
               SIGNED=true
             else
-              echo "ldid -s + -S FAILED"
-              # Restore unsigned
-              rm -rf Payload
-              unzip -q AgentBox-unsigned.ipa
-            fi
-          fi
-
-          # 方案 3: codesign ad-hoc (trollstore 能识别 entitlements)
-          if [ "$SIGNED" = false ]; then
-            echo "=== Trying codesign ==="
-            if codesign --force --sign - \
-              --entitlements src/Entitlements.plist \
-              Payload/AgentBox.app 2>&1; then
-              echo "codesign SUCCESS"
-              SIGNED=true
-            else
-              echo "codesign FAILED"
+              echo "ldid failed"
             fi
           fi
 
@@ -239,10 +221,10 @@ jobs:
             echo "Signed IPA: $(ls -lh AgentBox.ipa)"
           else
             cp AgentBox-unsigned.ipa AgentBox.ipa
-            echo "FINAL: unsigned IPA (all signing methods failed)"
+            echo "FINAL: unsigned IPA"
             ls -lh AgentBox.ipa
           fi
-          rm -rf Payload AgentBox-tmp.ipa Signed
+          rm -rf Payload
 
       # ── 14. 发布 Release ──
       - name: Release
