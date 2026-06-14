@@ -179,45 +179,48 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. zsign 签名（brew 预编译版）──
+      # ── 12. zsign 签名（嵌入 entitlements 后剥 ad-hoc 签名）──
       - name: zsign entitlements
         run: |
           set +e
-          echo "=== brew install zsign ==="
-          brew install zsign 2>&1 | tail -3
-          echo "zsign version: $(zsign -v 2>/dev/null || echo 'unknown')"
+          brew install zsign 2>&1 | tail -1
 
+          # Step 1: zsign -a -e to embed entitlements in binary
+          echo "=== zsign -a -e ==="
+          zsign -a -e src/Entitlements.plist -o /tmp/signed.ipa AgentBox-unsigned.ipa 2>&1 | tail -5
+
+          # Step 2: Extract binary and strip ad-hoc signature
           rm -rf Payload
-          unzip -q AgentBox-unsigned.ipa
+          unzip -q /tmp/signed.ipa
           BIN=Payload/AgentBox.app/AgentBox
 
-          # Mach-O diagnostics
-          echo "=== Binary type ==="
-          file "$BIN"
-
-          # zsign -a = ad-hoc, -e = entitlements
-          echo "=== zsign -a -e ==="
-          if zsign -a -e src/Entitlements.plist -o /tmp/zsigned.ipa AgentBox-unsigned.ipa 2>&1 | tail -15; then
-            if unzip -q /tmp/zsigned.ipa -d /tmp/zcheck/ 2>/dev/null; then
-              ZBIN=/tmp/zcheck/Payload/AgentBox.app/AgentBox
-              if codesign -d --entitlements - "$ZBIN" 2>/dev/null | grep -q "no-sandbox"; then
-                echo "ZSIGN: ENTITLEMENTS EMBEDDED!"
-                cp /tmp/zsigned.ipa AgentBox.ipa
-              else
-                echo "ZSIGN: no entitlements found in signed binary"
-              fi
-              rm -rf /tmp/zcheck
+          if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
+            echo "=== Entitlements present, stripping ad-hoc sig ==="
+            codesign --remove-signature "$BIN" 2>/dev/null || true
+            # Verify entitlements survived
+            if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
+              echo "ZSIGN: entitlements survived strip!"
+            else
+              echo "ZSIGN: entitlements lost after strip"
             fi
-          else
-            echo "ZSIGN: command failed"
-          fi
 
-          # Fallback
-          if [ ! -f AgentBox.ipa ]; then
-            echo "FALLBACK: unsigned IPA"
+            # Step 3: ldid pseudo-sign (TrollStore compatible, no entitlements needed)
+            echo "=== ldid pseudo-sign ==="
+            if ldid -s "$BIN" 2>/dev/null; then
+              echo "ldid pseudo-sign OK"
+            else
+              echo "ldid pseudo-sign failed, trying zsign ad-hoc again"
+              zsign -a -e src/Entitlements.plist -o /tmp/signed2.ipa AgentBox-unsigned.ipa 2>/dev/null
+              rm -rf Payload
+              unzip -q /tmp/signed2.ipa
+            fi
+
+            zip -r AgentBox.ipa Payload/ -q
+          else
+            echo "ZSIGN: no entitlements, falling back"
             zip -r AgentBox.ipa Payload/ -q
           fi
-          rm -rf Payload /tmp/zsigned.ipa
+          rm -rf Payload /tmp/signed.ipa /tmp/signed2.ipa
           echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 13. 发布 Release ──
