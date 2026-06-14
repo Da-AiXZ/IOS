@@ -205,26 +205,18 @@ final class ISHEngine: ObservableObject {
         }
         print("[ISHEngine] rootfs 完整性检查通过 (busybox OK)")
 
-        // ---- Phase 2: Boot Kernel (SKIP for debug — isolate crash) ----
-        // TODO: enable when kernel boot crash is resolved
-        let ENABLE_KERNEL_BOOT = false
-        if ENABLE_KERNEL_BOOT {
-            let shim = ISHAppShim.current
-            guard shim.initISH() else {
-                let err = EngineError.kernelBootFailed(reason: "ish 环境初始化失败")
-                state = .error(err.localizedDescription)
-                throw err
-            }
-            let bootResult = shim.bootKernel(rootPath)
-            guard bootResult == 0 else {
-                let err = EngineError.kernelBootFailed(reason: "actuate_kernel() 返回 \(bootResult)")
-                state = .error(err.localizedDescription)
-                throw err
-            }
-        } else {
-            // Kernel boot skipped — rootfs verified, ready for Phase 3
-            ISHAppShim.current.bootCompleted = true
-            print("[ISHEngine] ⚠️ 内核启动已跳过 (ENABLE_KERNEL_BOOT=false)")
+        // ---- Phase 2: Boot Kernel ----
+        let shim = ISHAppShim.current
+        guard shim.initISH() else {
+            let err = EngineError.kernelBootFailed(reason: "ish 环境初始化失败")
+            state = .error(err.localizedDescription)
+            throw err
+        }
+        let bootResult = shim.bootKernel(rootPath)
+        guard bootResult == 0 else {
+            let err = EngineError.kernelBootFailed(reason: "actuate_kernel() 返回 \(bootResult)")
+            state = .error(err.localizedDescription)
+            throw err
         }
 
         // ---- Phase 3: Readiness Check ----

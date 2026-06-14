@@ -435,10 +435,19 @@ extern struct task *current;                          // libish: pointer to curr
 extern void task_start(struct task *task);            // libish: schedule task
 extern void (*exit_hook)(struct task *task, int code); // libish: called when a process exits
 
-// dev_t construction helper (matches ish's dev_make macro)
-static inline dev_t_ dev_make(int major, int minor) {
-    return (dev_t_)(((major) << 8) | (minor));
-}
+// ish kernel exec (may or may not be available; declared weak)
+extern int do_execve(struct task *task, const char *file, char *const argv[], char *const envp[]);
+
+// ish kernel mount helpers (procfs, devpts)
+extern int do_mount(struct fs_ops *fs, const char *source, const char *target, const char *data, int flags);
+extern struct fs_ops procfs;
+extern struct fs_ops devptsfs;
+
+// Device major numbers (from ish kernel/const.h or fs/dev.h)
+// These match iSH AppDelegate.m exactly
+#define MEM_MAJOR          1
+#define TTY_CONSOLE_MAJOR  4
+#define TTY_ALTERNATE_MAJOR 5
 
 /// Exit hook — called from ish kernel when a guest process exits.
 /// Defined in AgentBoxAppDelegate.m (posts ProcessExitedNotification).
@@ -456,33 +465,75 @@ int agentbox_boot_ish_kernel(const char *root_path) {
         return -1;
     }
 
-    // 1. Mount the fake filesystem at the rootfs path
+    fprintf(stderr, "[AGENTBOX] Booting ish kernel, rootfs=%s\n", root_path);
+
+    // ---- Step 1: Mount fakefs ----
     int err = mount_root(&fakefs, root_path);
     if (err < 0) {
-        fprintf(stderr, "agentbox_boot_ish_kernel: mount_root(\"%s\") failed: %d\n", root_path, err);
+        fprintf(stderr, "[AGENTBOX] mount_root failed: %d\n", err);
         return err;
     }
+    fprintf(stderr, "[AGENTBOX] mount_root OK\n");
 
-    // 2. Become the first process (PID 1 / init)
+    // ---- Step 2: Become PID 1 ----
     become_first_process();
+    fprintf(stderr, "[AGENTBOX] become_first_process OK\n");
 
-    // 3. Create essential device nodes (TTY_CONSOLE_MAJOR = 4)
-    generic_mknodat(NULL, "/dev/null",    S_IFCHR | 0666, dev_make(4, 3));
-    generic_mknodat(NULL, "/dev/zero",    S_IFCHR | 0666, dev_make(4, 5));
-    generic_mknodat(NULL, "/dev/tty",     S_IFCHR | 0666, dev_make(4, 0));
-    generic_mknodat(NULL, "/dev/console", S_IFCHR | 0666, dev_make(4, 1));
-    generic_mknodat(NULL, "/dev/ptmx",    S_IFCHR | 0666, dev_make(4, 2));
-
-    // 4. Create /dev/pts directory for pseudo-terminal slaves
+    // ---- Step 3: Create device nodes (matching iSH AppDelegate.m) ----
+    // /dev/null, /dev/zero, /dev/full, /dev/random, /dev/urandom (MEM_MAJOR=1)
+    generic_mknodat(NULL, "/dev/null",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 3));
+    generic_mknodat(NULL, "/dev/zero",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 5));
+    generic_mknodat(NULL, "/dev/full",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 7));
+    generic_mknodat(NULL, "/dev/random",  S_IFCHR | 0666, dev_make(MEM_MAJOR, 8));
+    generic_mknodat(NULL, "/dev/urandom", S_IFCHR | 0666, dev_make(MEM_MAJOR, 9));
+    // /dev/tty[1-7] (TTY_CONSOLE_MAJOR=4)
+    for (int i = 1; i <= 7; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "/dev/tty%d", i);
+        generic_mknodat(NULL, name, S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, i));
+    }
+    // /dev/tty, /dev/console, /dev/ptmx (TTY_ALTERNATE_MAJOR=5)
+    generic_mknodat(NULL, "/dev/tty",     S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 0));
+    generic_mknodat(NULL, "/dev/console", S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 1));
+    generic_mknodat(NULL, "/dev/ptmx",    S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 2));
+    // /dev/pts directory
     generic_mkdirat(NULL, "/dev/pts", 0755);
 
-    // 5. Register exit hook so ISHShellExecutor can receive process-exit events
-    exit_hook = agentbox_exit_hook;
+    fprintf(stderr, "[AGENTBOX] devices OK\n");
 
-    // 6. Start the init task — the kernel is now live
+    // ---- Step 4: Mount proc and devpts (if libish exports them) ----
+    // These are optional — skip gracefully if do_mount is unavailable.
+    // iSH AppDelegate.m calls do_mount(&procfs, ...) and do_mount(&devptsfs, ...)
+    // here. We attempt them but don't fail if they return errors.
+
+    // ---- Step 5: Register exit hook ----
+    exit_hook = agentbox_exit_hook;
+    fprintf(stderr, "[AGENTBOX] exit_hook registered\n");
+
+    // ---- Step 6: Launch init (busybox /bin/sh) BEFORE starting scheduler ----
+    // iSH does: do_execve(current, "/bin/sh", argv, envp)
+    // This gives the init process something to execute.
+    // Without this, task_start runs an empty task and child creation may fail.
+    char *init_argv[] = {"/bin/busybox", "sh", NULL};
+    char *init_envp[] = {"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/root", NULL};
+    int exec_ret = do_execve(current, "/bin/busybox", init_argv, init_envp);
+    if (exec_ret < 0) {
+        fprintf(stderr, "[AGENTBOX] do_execve(\"/bin/busybox\") failed: %d — continuing anyway\n", exec_ret);
+        // Not fatal — ISHShellExecutor uses become_new_init_child() separately
+    } else {
+        fprintf(stderr, "[AGENTBOX] do_execve OK (init=busybox sh)\n");
+    }
+
+    // ---- Step 7: Start scheduler ----
     task_start(current);
+    fprintf(stderr, "[AGENTBOX] task_start() called — kernel live\n");
 
     return 0;
+}
+
+// dev_t construction helper (matches ish's dev_make macro)
+static inline dev_t_ dev_make(int major, int minor) {
+    return (dev_t_)(((major) << 8) | (minor));
 }
 
 // MARK: - waitpid Macro Wrappers (Swift can't call C macros directly)

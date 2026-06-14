@@ -173,25 +173,65 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs (preserve symlinks — FileManager follows them)
+          # Extract rootfs + resolve symlinks (Python — guaranteed correct)
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
           if [ -f "$ROOTFS_TGZ" ]; then
-            mkdir -p Payload/AgentBox.app/rootfs
-            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/
+            TMPROOT="/tmp/agentbox-rootfs-$$"
+            mkdir -p "$TMPROOT" Payload/AgentBox.app/rootfs
+            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C "$TMPROOT/"
+            # Python: walk & replace symlinks with real file copies
+            python3 -c "
+import os, shutil
+src = '$TMPROOT'
+dst = 'Payload/AgentBox.app/rootfs'
+os.makedirs(dst, exist_ok=True)
+# First copy dirs and regular files
+for root, dirs, files in os.walk(src):
+    rel = os.path.relpath(root, src)
+    target_dir = os.path.join(dst, rel)
+    os.makedirs(target_dir, exist_ok=True)
+    for f in files:
+        sp = os.path.join(root, f)
+        dp = os.path.join(target_dir, f)
+        if os.path.islink(sp):
+            lnk = os.readlink(sp)
+            if os.path.isabs(lnk):
+                real = os.path.join(src, lnk.lstrip('/'))
+            else:
+                real = os.path.normpath(os.path.join(root, lnk))
+            if os.path.exists(real):
+                shutil.copy2(real, dp)
+        else:
+            shutil.copy2(sp, dp)
+    # Handle directory symlinks separately
+    for d in dirs:
+        sd = os.path.join(root, d)
+        if os.path.islink(sd):
+            lnk = os.readlink(sd)
+            if os.path.isabs(lnk):
+                real = os.path.join(src, lnk.lstrip('/'))
+            else:
+                real = os.path.normpath(os.path.join(root, lnk))
+            if os.path.isdir(real):
+                dd = os.path.join(target_dir, d)
+                shutil.copytree(real, dd, symlinks=False)
+print('Python: symlinks resolved')
+" 2>&1
+            rm -rf "$TMPROOT"
             echo "=== rootfs/bin/ ==="
-            ls -la Payload/AgentBox.app/rootfs/bin/ | head -10
-            BB=$(find Payload/AgentBox.app/rootfs/bin/ -name busybox -type f | head -1)
+            ls -la Payload/AgentBox.app/rootfs/bin/ | head -12
+            BB=$(find Payload/AgentBox.app/rootfs/bin/ -name busybox -type f ! -type l | head -1)
             if [ -n "$BB" ] && [ -s "$BB" ]; then
               echo "busybox: OK ($(ls -lh "$BB" | awk '{print $5}'))"
             else
-              echo "WARN: busybox not found as regular file"
+              echo "ERROR: busybox not found as real file"
             fi
             echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
             echo "WARN: $ROOTFS_TGZ not found"
           fi
           cp src/Entitlements.plist Payload/AgentBox.app/
-          zip -ry AgentBox-unsigned.ipa Payload/ -q
+          zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
