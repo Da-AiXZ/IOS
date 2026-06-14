@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14   # Apple Silicon — fast; let zsign handle the Mach-O
+    runs-on: macos-13   # Intel x86_64 — ldid works here
     timeout-minutes: 120
 
     steps:
@@ -33,9 +33,9 @@ jobs:
           echo "=== Current xcode-select ==="
           xcode-select -p 2>/dev/null || echo "(not set)"
 
-          # macos-13 (Intel) default Xcode ≈ 15.0~15.2
-          # Intel cross-compile → ARM64 iOS → Intel ldid can parse the Mach-O
-          echo ">>> Using default Xcode on macos-13 (Intel)"
+          # macos-13 (Intel) default Xcode ~15.0
+          # Intel ldid can parse cross-compiled ARM64 Mach-O
+          echo ">>> Intel macOS — ldid should work"
 
           echo ""
           echo "=== Final toolchain ==="
@@ -179,34 +179,36 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. zsign 签名 ──
-      - name: zsign entitlements
+      # ── 12. ldid 注入 entitlements ──
+      - name: ldid entitlements
         run: |
-          set +e
-          brew install zsign 2>&1 | tail -1
+          set -e
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
+          BIN=Payload/AgentBox.app/AgentBox
 
-          echo "=== zsign -e (no -a, no cert) ==="
-          if zsign -e src/Entitlements.plist -o /tmp/z.ipa AgentBox-unsigned.ipa 2>&1 | tail -15; then
-            rm -rf Payload2
-            unzip -q /tmp/z.ipa -d Payload2/
-            if codesign -d --entitlements - Payload2/Payload/AgentBox.app/AgentBox 2>/dev/null | grep -q "no-sandbox"; then
-              echo "ZSIGN(-e only): ENTITLEMENTS EMBEDDED!"
-              cp /tmp/z.ipa AgentBox.ipa
-            else
-              echo "ZSIGN(-e only): no entitlements"
-            fi
-            rm -rf Payload2
+          echo "=== Mac-O type ==="
+          file "$BIN"
+
+          echo "=== ldid -S ==="
+          if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
+            echo "ldid OK"
+          elif which ldid2 >/dev/null 2>&1; then
+            echo "ldid failed, ldid2..."
+            ldid2 -S src/Entitlements.plist "$BIN" 2>&1
           else
-            echo "ZSIGN(-e only): failed"
+            echo "FATAL: no ldid"
+            exit 1
           fi
 
-          if [ ! -f AgentBox.ipa ]; then
-            echo "FALLBACK: unsigned"
-            zip -r AgentBox.ipa Payload/ -q
+          if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
+            echo "ENTITLEMENTS: VERIFIED"
+          else
+            echo "WARN: cannot verify"
           fi
-          rm -rf Payload /tmp/z.ipa
+
+          zip -r AgentBox.ipa Payload/ -q
+          rm -rf Payload
           echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 13. 发布 Release ──
