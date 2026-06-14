@@ -435,10 +435,6 @@ extern struct task *current;                          // libish: pointer to curr
 extern void task_start(struct task *task);            // libish: schedule task
 extern void (*exit_hook)(struct task *task, int code); // libish: called when a process exits
 
-// do_execve — may not be exported; declared weak so linker doesn't fail
-__attribute__((weak))
-extern int do_execve(struct task *task, const char *file, char *const argv[], char *const envp[]);
-
 // Device major numbers (from ish kernel — matching iSH AppDelegate.m)
 #define MEM_MAJOR          1
 #define TTY_CONSOLE_MAJOR  4
@@ -505,21 +501,10 @@ int agentbox_boot_ish_kernel(const char *root_path) {
     exit_hook = agentbox_exit_hook;
     fprintf(stderr, "[AGENTBOX] exit_hook registered\n");
 
-    // ---- Step 6: Launch init BEFORE starting scheduler (if do_execve available) ----
-    if (&do_execve != NULL) {
-        char *init_argv[] = {"/bin/busybox", "sh", NULL};
-        char *init_envp[] = {"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/root", NULL};
-        int exec_ret = do_execve(current, "/bin/busybox", init_argv, init_envp);
-        if (exec_ret < 0) {
-            fprintf(stderr, "[AGENTBOX] do_execve failed: %d (non-fatal)\n", exec_ret);
-        } else {
-            fprintf(stderr, "[AGENTBOX] do_execve OK (init=busybox sh)\n");
-        }
-    } else {
-        fprintf(stderr, "[AGENTBOX] do_execve not available — skipping init launch\n");
-    }
-
-    // ---- Step 7: Start scheduler ----
+    // ---- Step 6: Start scheduler ----
+    // Note: do_execve is not exported from libish.a. We skip launching an init
+    // process here. ISHShellExecutor handles process creation via
+    // become_new_init_child() when a command needs to run.
     task_start(current);
     fprintf(stderr, "[AGENTBOX] task_start() called — kernel live\n");
 
