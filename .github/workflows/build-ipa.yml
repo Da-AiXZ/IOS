@@ -112,10 +112,17 @@ jobs:
       - name: Ninja build
         working-directory: libish
         run: |
-          ninja -C build_arm64 libish.a libish_emu.a libfakefs.a fakefsify
+          ninja -C build_arm64 libish.a libish_emu.a libfakefs.a
           echo "=== Libraries built ==="
           ls -lh build_arm64/libish.a build_arm64/libish_emu.a build_arm64/libfakefs.a
-          echo "=== fakefsify tool ==="
+          # Build fakefsify (not in default ninja targets)
+          echo "=== Building fakefsify ==="
+          cc -o build_arm64/tools/fakefsify tools/fakefsify.c tools/fakefs.c util/fchdir.c \
+            -I. -Itools -Iutil \
+            $(pkg-config --cflags libarchive 2>/dev/null || echo "") \
+            build_arm64/libfakefs.a \
+            $(pkg-config --libs libarchive 2>/dev/null || echo "-larchive") \
+            -lz -lbz2
           ls -lh build_arm64/tools/fakefsify
 
       - name: Verify libraries
