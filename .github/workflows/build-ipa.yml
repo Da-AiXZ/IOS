@@ -173,11 +173,33 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs into data/ subdir (fakefs_mount requires path ending in "data")
+          # Extract rootfs into data/ subdir, then resolve all symlinks to real files
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
           if [ -f "$ROOTFS_TGZ" ]; then
-            mkdir -p Payload/AgentBox.app/rootfs/data
-            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/data/
+            TMPROOT="/tmp/agentbox-rootfs-$$"
+            mkdir -p "$TMPROOT" Payload/AgentBox.app/rootfs/data
+            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C "$TMPROOT/"
+            # Alpine uses absolute symlinks (sh -> /bin/busybox).
+            # Replace them with real files so iOS FileManager can verify and copy them.
+            echo "=== Resolving symlinks ==="
+            cd "$TMPROOT"
+            find . -type l | while IFS= read -r link; do
+              target=$(readlink "$link")
+              dir=$(dirname "$link")
+              if [ "${target#/}" != "$target" ]; then
+                real=".$target"   # absolute → relative to rootfs root
+              else
+                real="$dir/$target"
+              fi
+              if [ -f "$real" ] || [ -d "$real" ]; then
+                rm "$link"
+                cp -a "$real" "$link"
+              fi
+            done
+            cd "$GITHUB_WORKSPACE"
+            # Now copy to Payload (all files are real, no symlinks)
+            cp -R "$TMPROOT/" Payload/AgentBox.app/rootfs/data/
+            rm -rf "$TMPROOT"
             echo "=== rootfs/data/bin/ ==="
             ls -la Payload/AgentBox.app/rootfs/data/bin/ | head -10
             echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
