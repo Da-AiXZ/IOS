@@ -185,7 +185,7 @@ jobs:
             echo "WARN: $ROOTFS_TGZ not found"
           fi
           cp src/Entitlements.plist Payload/AgentBox.app/
-          zip -r AgentBox-unsigned.ipa Payload/ -q
+          zip -ry AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 

@@ -335,12 +335,14 @@ struct TerminalStatusView: View {
 
     private var statusDetail: String {
         let rootfsURL = Bundle.main.bundleURL.appendingPathComponent("rootfs")
+        let bbPath = rootfsURL.appendingPathComponent("bin/busybox").path
         let shPath = rootfsURL.appendingPathComponent("bin/sh").path
+        let bbExists = FileManager.default.fileExists(atPath: bbPath)
         let shExists = FileManager.default.fileExists(atPath: shPath)
         
         let debugInfo = """
         ─────────────────────
-        .app/rootfs/bin/sh: \(shExists ? "✅ 存在" : "❌ 不存在")
+        busybox: \(bbExists ? "✅" : "❌")  sh: \(shExists ? "✅" : "❌")
         rootfs 路径: \(rootfsURL.path)
         isInitialized: \(engine.isInitialized)
         当前状态: \(engine.state.description)

@@ -241,11 +241,11 @@ final class ISHEngine: ObservableObject {
             throw EngineError.readinessCheckFailed(reason: "内核启动标志未设置")
         }
 
-        // Verify rootfs /bin/sh exists (quick sanity check)
-        let shPath = (rootfsPath as NSString).appendingPathComponent("bin/sh")
-        guard FileSystemAccess.fileExists(at: shPath) else {
+        // Verify rootfs bin/busybox exists (Alpine uses symlinks from busybox)
+        let bbPath = (rootfsPath as NSString).appendingPathComponent("bin/busybox")
+        guard FileSystemAccess.fileExists(at: bbPath) else {
             throw EngineError.rootfsCorrupted(
-                reason: "rootfs 中未找到 /bin/sh: \(shPath)"
+                reason: "rootfs 中未找到 bin/busybox: \(bbPath)"
             )
         }
 
@@ -338,8 +338,8 @@ final class RootFSManager: @unchecked Sendable {
 
     /// 检查 rootfs 是否已解压并有效。
     func rootfsExists() -> Bool {
-        let shPath = (rootfsPath as NSString).appendingPathComponent("bin/sh")
-        return FileSystemAccess.fileExists(at: shPath)
+        let bbPath = (rootfsPath as NSString).appendingPathComponent("bin/busybox")
+        return FileSystemAccess.fileExists(at: bbPath)
     }
 
     // MARK: - Cleanup
@@ -359,9 +359,9 @@ final class RootFSManager: @unchecked Sendable {
         // RootFS is already extracted in CI at build time into .app/rootfs/
         // Just verify it exists
         let rootfsDir = rootfsPath
-        let shPath = (rootfsDir as NSString).appendingPathComponent("bin/sh")
-        guard FileManager.default.fileExists(atPath: shPath) else {
-            throw EngineError.rootfsCorrupted(reason: "rootfs /bin/sh not found at \(shPath)")
+        let bbPath = (rootfsDir as NSString).appendingPathComponent("bin/busybox")
+        guard FileManager.default.fileExists(atPath: bbPath) else {
+            throw EngineError.rootfsCorrupted(reason: "rootfs bin/busybox not found at \(bbPath)")
         }
         print("[ISHEngine] RootFS verified at: \(rootfsDir)")
     }

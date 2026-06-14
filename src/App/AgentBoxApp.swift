@@ -38,9 +38,9 @@ struct AgentBoxApp: App {
     private func initializeEngine() async {
         // RootFS is pre-extracted at CI build time into .app/rootfs/
         let rootfsDir = Bundle.main.bundleURL.appendingPathComponent("rootfs", isDirectory: true)
-        let shPath = rootfsDir.appendingPathComponent("bin/sh")
-        guard FileManager.default.fileExists(atPath: shPath.path) else {
-            print("[AgentBoxApp] rootfs/bin/sh not found at \(shPath.path)")
+        let bbPath = rootfsDir.appendingPathComponent("bin/busybox")
+        guard FileManager.default.fileExists(atPath: bbPath.path) else {
+            print("[AgentBoxApp] rootfs/bin/busybox not found at \(bbPath.path)")
             return
         }
 
