@@ -183,52 +183,39 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 构建最新 ldid（ProcursusTeam fork，支持 Xcode 16 Mach-O）──
-      - name: Build ldid from source
-        env:
-          SDKROOT: ""   # 必须清除！ldid 是 macOS 工具，不能链接 iOS SDK
-        run: |
-          git clone --depth 1 https://github.com/ProcursusTeam/ldid.git /tmp/ldid-src
-          cd /tmp/ldid-src
-          brew install openssl libplist
-          make -j$(sysctl -n hw.logicalcpu) \
-            OPENSSL_PREFIX=$(brew --prefix openssl) \
-            LIBPLIST_PREFIX=$(brew --prefix libplist) \
-            PREFIX=/tmp/ldid-bin
-          mkdir -p /tmp/ldid-bin/bin
-          cp ldid /tmp/ldid-bin/bin/ldid
-          echo "/tmp/ldid-bin/bin" >> $GITHUB_PATH
-          /tmp/ldid-bin/bin/ldid --version 2>/dev/null || /tmp/ldid-bin/bin/ldid 2>&1 | head -1
-
-      # ── 13. ldid 假签名 (非致命：失败则退回到未签名 IPA) ──
-      - name: ldid fakesign
+      # ── 12. 签名（ldid 处理 Xcode 16.4 二进制有兼容问题，用 codesign 备份）──
+      - name: Sign with entitlements
         run: |
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
           BIN=Payload/AgentBox.app/AgentBox
+          SIGNED=false
 
-          # 调试：看二进制格式
-          echo "=== Binary header ==="
-          xxd "$BIN" 2>/dev/null | head -3 || od -A x -t x1z "$BIN" | head -3
-          echo "=== file type ==="
-          file "$BIN" || echo "(file command not available)"
-
-          # 尝试签名
+          # 方法 1: ldid（首选，TrollStore 原生工具）
           if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
             echo "=== ldid SUCCESS ==="
-            zip -r AgentBox.ipa Payload/ -q
             SIGNED=true
           else
-            echo "=== ldid FAILED, falling back to unsigned IPA ==="
-            SIGNED=false
+            echo "=== ldid FAILED, trying codesign ==="
+          fi
+
+          # 方法 2: codesign ad-hoc（fallback，Xcode 内置）
+          if [ "$SIGNED" = false ]; then
+            codesign --force --sign - \
+              --entitlements src/Entitlements.plist \
+              --timestamp=none \
+              Payload/AgentBox.app 2>&1 && SIGNED=true || echo "codesign also failed"
+          fi
+
+          if [ "$SIGNED" = true ]; then
+            zip -r AgentBox.ipa Payload/ -q
+            echo "Signed IPA: $(ls -lh AgentBox.ipa)"
+          else
+            cp AgentBox-unsigned.ipa AgentBox.ipa
+            echo "WARNING: Released unsigned IPA (signing failed)"
+            ls -lh AgentBox.ipa
           fi
           rm -rf Payload
-
-          if [ "$SIGNED" = false ]; then
-            cp AgentBox-unsigned.ipa AgentBox.ipa
-            echo "WARNING: Released unsigned IPA (ldid failed)"
-          fi
-          ls -lh AgentBox.ipa
 
       # ── 14. 发布 Release ──
       - name: Release
