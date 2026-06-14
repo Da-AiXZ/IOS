@@ -194,29 +194,27 @@ jobs:
           BIN=Payload/AgentBox.app/AgentBox
           SIGNED=false
 
-          # 方案 1: ldid（TrollStore 标准方式）
+          # 方案 1: ldid（标准方式）
           echo "=== ldid ==="
-          ldid -S src/Entitlements.plist "$BIN" 2>&1 || true
-          # 验证 entitlements 是否真嵌入了
-          if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
-            echo "ldid OK (entitlements verified)"
-            SIGNED=true
-          else
-            echo "ldid did not embed entitlements"
+          ldid -S src/Entitlements.plist "$BIN" 2>/dev/null && {
+            codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && { echo "ldid OK"; SIGNED=true; } || echo "ldid no entitlements"
+          } || echo "ldid failed"
+
+          # 方案 2: ldid2（brew ldid 附带的不同版本）
+          if [ "$SIGNED" = false ] && which ldid2 >/dev/null 2>&1; then
+            echo "=== ldid2 ==="
+            ldid2 -S src/Entitlements.plist "$BIN" 2>/dev/null && {
+              codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && { echo "ldid2 OK"; SIGNED=true; } || echo "ldid2 no entitlements"
+            } || echo "ldid2 failed"
           fi
 
-          # 方案 2: codesign (ad-hoc, 可能闪退但用于验证 ldid 是否可用)
+          # 方案 3: ldid -s pseudo-sign first, then -S entitlements
           if [ "$SIGNED" = false ]; then
-            echo "=== codesign ==="
-            # Try with --preserve-metadata to keep existing entitlements
-            codesign --force --sign - \
-              --entitlements src/Entitlements.plist \
-              --preserve-metadata=entitlements \
-              "$BIN" 2>&1
-            if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
-              echo "codesign OK"
-              SIGNED=true
-            fi
+            echo "=== ldid -s then -S ==="
+            ldid -s "$BIN" 2>/dev/null || true
+            ldid -S src/Entitlements.plist "$BIN" 2>/dev/null && {
+              codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && { echo "ldid -s+-S OK"; SIGNED=true; }
+            } || echo "ldid -s+-S failed"
           fi
 
           if [ "$SIGNED" = true ]; then
@@ -224,7 +222,7 @@ jobs:
             echo "Signed IPA: $(ls -lh AgentBox.ipa)"
           else
             cp AgentBox-unsigned.ipa AgentBox.ipa
-            echo "FINAL: unsigned IPA"
+            echo "FINAL: unsigned IPA (all ldid methods failed)"
             ls -lh AgentBox.ipa
           fi
           rm -rf Payload
