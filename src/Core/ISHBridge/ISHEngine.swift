@@ -300,8 +300,7 @@ final class RootFSManager: @unchecked Sendable {
 
     /// rootfs 在 Documents 中的可写路径。
     private var writableRoot: URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("ish-rootfs", isDirectory: true)
+        URL(fileURLWithPath: "/tmp/ish-rootfs", isDirectory: true)
     }
 
     /// mount 目标（可写 rootfs 下的 data/ 子目录，符合 fakefs_mount 要求）。
