@@ -36,24 +36,21 @@ struct AgentBoxApp: App {
     /// 若 rootfs 资源未捆绑（开发阶段），跳过初始化，
     /// 其他模块（SpawnRoot、FileSystemAccess）仍可独立使用。
     private func initializeEngine() async {
-        // 查找捆绑的 Alpine rootfs
-        guard let rootfsURL = Bundle.main.url(
-            forResource: "alpine-aarch64",
-            withExtension: "tar.gz"
-        ) else {
-            print("[AgentBoxApp] ⚠️ alpine-aarch64.tar.gz 未找到，跳过引擎初始化")
-            print("[AgentBoxApp] SpawnRoot / FileSystemAccess 仍可正常使用")
+        // RootFS is pre-extracted at CI build time into .app/rootfs/
+        let rootfsDir = Bundle.main.bundleURL.appendingPathComponent("rootfs", isDirectory: true)
+        let shPath = rootfsDir.appendingPathComponent("bin/sh")
+        guard FileManager.default.fileExists(atPath: shPath.path) else {
+            print("[AgentBoxApp] rootfs/bin/sh not found at \(shPath.path)")
             return
         }
 
         print("[AgentBoxApp] 开始初始化 ish-arm64 引擎...")
 
         do {
-            try await engine.initialize(rootfsURL: rootfsURL)
+            try await engine.initialize(rootfsURL: rootfsDir)
             print("[AgentBoxApp] ✅ ish-arm64 引擎初始化成功")
         } catch {
             print("[AgentBoxApp] ❌ 引擎初始化失败: \(error.localizedDescription)")
-            // 错误已反映在 engine.state 中，ContentView 会展示
         }
     }
 }
