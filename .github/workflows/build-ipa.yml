@@ -179,43 +179,28 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 签名（先 ldid，失败则 zsign，都不行就未签名）──
-      - name: Sign with entitlements
+      # ── 12. zsign 签名（唯一能在 macos-14 嵌入 entitlements 的工具）──
+      - name: zsign entitlements
         run: |
           set +e
-          rm -rf Payload
-          unzip -q AgentBox-unsigned.ipa
-          BIN=Payload/AgentBox.app/AgentBox
-          SIGNED=false
+          brew install zsign 2>/dev/null
 
-          echo "=== ldid ==="
-          if ldid -S src/Entitlements.plist "$BIN" 2>/dev/null; then
-            codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && SIGNED=true
-          fi
-
-          if [ "$SIGNED" = false ] && which ldid2 >/dev/null 2>&1; then
-            echo "=== ldid2 ==="
-            ldid2 -S src/Entitlements.plist "$BIN" 2>/dev/null && {
-              codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && SIGNED=true
-            }
-          fi
-
-          if [ "$SIGNED" = false ]; then
-            echo "=== zsign fallback ==="
-            brew install zsign 2>/dev/null
-            if zsign -a -e src/Entitlements.plist -o /tmp/z.ipa AgentBox-unsigned.ipa 2>/dev/null; then
-              rm -rf Payload
-              unzip -q /tmp/z.ipa
-              BIN2=Payload/AgentBox.app/AgentBox
-              if codesign -d --entitlements - "$BIN2" 2>/dev/null | grep -q "no-sandbox"; then
-                echo "zsign: embedded"
-                # Note: ad-hoc sig may crash; TrollStore should re-sign on install
-              fi
+          echo "=== zsign ==="
+          if zsign -a -e src/Entitlements.plist -o AgentBox.ipa AgentBox-unsigned.ipa 2>&1 | tail -8; then
+            # Verify entitlements
+            rm -rf /tmp/zcheck
+            unzip -q AgentBox.ipa -d /tmp/zcheck/
+            if codesign -d --entitlements - /tmp/zcheck/Payload/AgentBox.app/AgentBox 2>/dev/null | grep -q "no-sandbox"; then
+              echo "ZSIGN: ENTITLEMENTS EMBEDDED"
+              echo "WARNING: ad-hoc signature — TrollStore must re-sign on install"
+            else
+              echo "ZSIGN: signed but no entitlements"
             fi
+            rm -rf /tmp/zcheck
+          else
+            echo "ZSIGN: failed, releasing unsigned"
+            cp AgentBox-unsigned.ipa AgentBox.ipa
           fi
-
-          zip -r AgentBox.ipa Payload/ -q
-          rm -rf Payload /tmp/z.ipa
           echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 13. 发布 Release ──
