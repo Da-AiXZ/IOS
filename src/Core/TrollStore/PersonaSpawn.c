@@ -408,18 +408,10 @@ int agentbox_fork_root_spawn(
 extern struct fs_ops fakefs;                         // libfakefs.a: fake filesystem ops
 
 extern int  mount_root(struct fs_ops *fs, const char *path); // libfakefs.a: mount fakefs at path
-extern void FsInitialize(void);                          // libish: init filesystem layer
 extern void become_first_process(void);                   // libish: make current task init (PID 1)
 
 extern int  generic_mknodat(void *at, const char *path, mode_t_ mode, dev_t_ dev);
 extern int  generic_mkdirat(void *at, const char *path, mode_t_ mode);
-
-#define TTY_CONSOLE_MAJOR 4
-
-extern struct tty_driver *tty_drivers[];              // libish: indexed by major number
-extern struct tty_driver  ios_console_driver;         // libish: iOS console backend
-extern void set_console_device(int major, int minor);
-extern int  create_stdio(const char *device, int major, int minor);
 
 extern struct task *current;                          // libish: pointer to current task
 extern void task_start(struct task *task);            // libish: schedule task
@@ -453,31 +445,23 @@ int agentbox_boot_ish_kernel(const char *root_path) {
         return err;
     }
 
-    // 2. Initialize the filesystem layer
-    FsInitialize();
-
-    // 3. Become the first process (PID 1 / init)
+    // 2. Become the first process (PID 1 / init)
     become_first_process();
 
-    // 4. Create essential device nodes
-    generic_mknodat(NULL, "/dev/null",    S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 3));
-    generic_mknodat(NULL, "/dev/zero",    S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 5));
-    generic_mknodat(NULL, "/dev/tty",     S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 0));
-    generic_mknodat(NULL, "/dev/console", S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 1));
-    generic_mknodat(NULL, "/dev/ptmx",    S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, 2));
+    // 3. Create essential device nodes (TTY_CONSOLE_MAJOR = 4)
+    generic_mknodat(NULL, "/dev/null",    S_IFCHR | 0666, dev_make(4, 3));
+    generic_mknodat(NULL, "/dev/zero",    S_IFCHR | 0666, dev_make(4, 5));
+    generic_mknodat(NULL, "/dev/tty",     S_IFCHR | 0666, dev_make(4, 0));
+    generic_mknodat(NULL, "/dev/console", S_IFCHR | 0666, dev_make(4, 1));
+    generic_mknodat(NULL, "/dev/ptmx",    S_IFCHR | 0666, dev_make(4, 2));
 
-    // 5. Create /dev/pts directory for pseudo-terminal slaves
+    // 4. Create /dev/pts directory for pseudo-terminal slaves
     generic_mkdirat(NULL, "/dev/pts", 0755);
 
-    // 6. Set up the iOS console driver
-    tty_drivers[TTY_CONSOLE_MAJOR] = &ios_console_driver;
-    set_console_device(TTY_CONSOLE_MAJOR, 1);
-    create_stdio("/dev/console", TTY_CONSOLE_MAJOR, 1);
-
-    // 7. Register exit hook so ISHShellExecutor can receive process-exit events
+    // 5. Register exit hook so ISHShellExecutor can receive process-exit events
     exit_hook = agentbox_exit_hook;
 
-    // 8. Start the init task — the kernel is now live
+    // 6. Start the init task — the kernel is now live
     task_start(current);
 
     return 0;
