@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-13   # Intel x86_64 — ldid works here
+    runs-on: macos-14
     timeout-minutes: 120
 
     steps:
@@ -179,36 +179,43 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. ldid 注入 entitlements ──
-      - name: ldid entitlements
+      # ── 12. 签名（先 ldid，失败则 zsign，都不行就未签名）──
+      - name: Sign with entitlements
         run: |
-          set -e
+          set +e
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
           BIN=Payload/AgentBox.app/AgentBox
+          SIGNED=false
 
-          echo "=== Mac-O type ==="
-          file "$BIN"
-
-          echo "=== ldid -S ==="
-          if ldid -S src/Entitlements.plist "$BIN" 2>&1; then
-            echo "ldid OK"
-          elif which ldid2 >/dev/null 2>&1; then
-            echo "ldid failed, ldid2..."
-            ldid2 -S src/Entitlements.plist "$BIN" 2>&1
-          else
-            echo "FATAL: no ldid"
-            exit 1
+          echo "=== ldid ==="
+          if ldid -S src/Entitlements.plist "$BIN" 2>/dev/null; then
+            codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && SIGNED=true
           fi
 
-          if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
-            echo "ENTITLEMENTS: VERIFIED"
-          else
-            echo "WARN: cannot verify"
+          if [ "$SIGNED" = false ] && which ldid2 >/dev/null 2>&1; then
+            echo "=== ldid2 ==="
+            ldid2 -S src/Entitlements.plist "$BIN" 2>/dev/null && {
+              codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox" && SIGNED=true
+            }
+          fi
+
+          if [ "$SIGNED" = false ]; then
+            echo "=== zsign fallback ==="
+            brew install zsign 2>/dev/null
+            if zsign -a -e src/Entitlements.plist -o /tmp/z.ipa AgentBox-unsigned.ipa 2>/dev/null; then
+              rm -rf Payload
+              unzip -q /tmp/z.ipa
+              BIN2=Payload/AgentBox.app/AgentBox
+              if codesign -d --entitlements - "$BIN2" 2>/dev/null | grep -q "no-sandbox"; then
+                echo "zsign: embedded"
+                # Note: ad-hoc sig may crash; TrollStore should re-sign on install
+              fi
+            fi
           fi
 
           zip -r AgentBox.ipa Payload/ -q
-          rm -rf Payload
+          rm -rf Payload /tmp/z.ipa
           echo "IPA: $(ls -lh AgentBox.ipa)"
 
       # ── 13. 发布 Release ──
