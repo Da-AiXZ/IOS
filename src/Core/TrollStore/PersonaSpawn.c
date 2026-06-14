@@ -435,16 +435,11 @@ extern struct task *current;                          // libish: pointer to curr
 extern void task_start(struct task *task);            // libish: schedule task
 extern void (*exit_hook)(struct task *task, int code); // libish: called when a process exits
 
-// ish kernel exec (may or may not be available; declared weak)
+// do_execve — may not be exported; declared weak so linker doesn't fail
+__attribute__((weak))
 extern int do_execve(struct task *task, const char *file, char *const argv[], char *const envp[]);
 
-// ish kernel mount helpers (procfs, devpts)
-extern int do_mount(struct fs_ops *fs, const char *source, const char *target, const char *data, int flags);
-extern struct fs_ops procfs;
-extern struct fs_ops devptsfs;
-
-// Device major numbers (from ish kernel/const.h or fs/dev.h)
-// These match iSH AppDelegate.m exactly
+// Device major numbers (from ish kernel — matching iSH AppDelegate.m)
 #define MEM_MAJOR          1
 #define TTY_CONSOLE_MAJOR  4
 #define TTY_ALTERNATE_MAJOR 5
@@ -510,18 +505,18 @@ int agentbox_boot_ish_kernel(const char *root_path) {
     exit_hook = agentbox_exit_hook;
     fprintf(stderr, "[AGENTBOX] exit_hook registered\n");
 
-    // ---- Step 6: Launch init (busybox /bin/sh) BEFORE starting scheduler ----
-    // iSH does: do_execve(current, "/bin/sh", argv, envp)
-    // This gives the init process something to execute.
-    // Without this, task_start runs an empty task and child creation may fail.
-    char *init_argv[] = {"/bin/busybox", "sh", NULL};
-    char *init_envp[] = {"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/root", NULL};
-    int exec_ret = do_execve(current, "/bin/busybox", init_argv, init_envp);
-    if (exec_ret < 0) {
-        fprintf(stderr, "[AGENTBOX] do_execve(\"/bin/busybox\") failed: %d — continuing anyway\n", exec_ret);
-        // Not fatal — ISHShellExecutor uses become_new_init_child() separately
+    // ---- Step 6: Launch init BEFORE starting scheduler (if do_execve available) ----
+    if (&do_execve != NULL) {
+        char *init_argv[] = {"/bin/busybox", "sh", NULL};
+        char *init_envp[] = {"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/root", NULL};
+        int exec_ret = do_execve(current, "/bin/busybox", init_argv, init_envp);
+        if (exec_ret < 0) {
+            fprintf(stderr, "[AGENTBOX] do_execve failed: %d (non-fatal)\n", exec_ret);
+        } else {
+            fprintf(stderr, "[AGENTBOX] do_execve OK (init=busybox sh)\n");
+        }
     } else {
-        fprintf(stderr, "[AGENTBOX] do_execve OK (init=busybox sh)\n");
+        fprintf(stderr, "[AGENTBOX] do_execve not available — skipping init launch\n");
     }
 
     // ---- Step 7: Start scheduler ----
