@@ -21,23 +21,11 @@
 #include <copyfile.h>
 
 // MARK: - ish-arm64 Core Headers
-// These paths assume libish headers are in the Xcode header search paths.
-// In practice, they're resolved via the libish Meson build output or
-// a header-only wrapper target in the Xcode project.
+// Internal kernel headers needed by AgentBoxAppDelegate.m for struct task.
+// All other ish symbols (fakefs, mount_root, TTY_CONSOLE_MAJOR, etc.)
+// are declared via extern in PersonaSpawn.c to avoid internal header issues.
 
-// Kernel initialization
-#include "kernel/init.h"          // actuate_kernel()
-
-// File system layer
-#include "fs/real.h"              // realfs bind mount, realfs_open, etc.
-#include "fs/path.h"              // path resolution utilities
-#include "fs/fake.h"              // fakefs struct (mount_root)
-
-// TTY / console
-#include "kernel/tty.h"           // TTY_CONSOLE_MAJOR, tty_drivers, ios_console_driver
-
-// Sync primitive helpers (used by AgentBoxAppDelegate.m)
-#include "kernel/task.h"          // current, task struct
+#include "kernel/task.h"          // struct task (for exit_hook callback)
 
 // MARK: - ish-arm64 Obj-C API Headers
 #import "ISHShellExecutor.h"
