@@ -296,15 +296,25 @@ final class ISHEngine: ObservableObject {
 
 /// 管理 Alpine Linux aarch64 rootfs 的准备和验证。
 ///
-/// 负责：
-/// 1. 从捆绑的 `alpine-aarch64.tar.gz` 解压 rootfs
-/// 2. 验证解压后的 rootfs 结构完整性
-/// 3. 幂等：已解压则跳过
+/// CI 将 rootfs 预解压到 .app/rootfs/data/（只读）。
+/// 首次启动时复制到 Documents/ish-rootfs/data/（可写），
+/// 因为 fakefs_mount 需要在 mount 目录旁写入 meta.db 数据库文件。
 final class RootFSManager: @unchecked Sendable {
 
-    /// RootFS 在 .app/rootfs/data/ 内（CI 预解压到 data/ 子目录，fakefs_mount 要求路径以 "data" 结尾）。
+    /// rootfs 在 app bundle 中的路径（CI 预解压，只读）。
+    private var bundleRoot: URL {
+        Bundle.main.bundleURL.appendingPathComponent("rootfs", isDirectory: true)
+    }
+
+    /// rootfs 在 Documents 中的可写路径。
+    private var writableRoot: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return docs.appendingPathComponent("ish-rootfs", isDirectory: true)
+    }
+
+    /// mount 目标（可写 rootfs 下的 data/ 子目录，符合 fakefs_mount 要求）。
     private var targetRoot: URL {
-        Bundle.main.bundleURL.appendingPathComponent("rootfs/data", isDirectory: true)
+        writableRoot.appendingPathComponent("data", isDirectory: true)
     }
 
     /// rootfs 解压后的完整路径。
@@ -314,36 +324,31 @@ final class RootFSManager: @unchecked Sendable {
 
     // MARK: - Prepare
 
-    /// 准备 rootfs：若已存在则直接返回路径，否则从捆绑包解压。
-    ///
-    /// - Parameter rootfsURL: 捆绑的 .tar.gz 文件 URL。
-    /// - Returns: rootfs 解压后的目录路径。
-    /// - Throws: ``EngineError``。
+    /// 准备 rootfs：首次启动从 bundle 复制到 Documents，后续直接返回。
     func prepareRootFS(from rootfsURL: URL) async throws -> String {
-        // Check if rootfs already exists
         if rootfsExists() {
-            print("[RootFSManager] rootfs 已存在，跳过解压: \(rootfsPath)")
+            print("[RootFSManager] rootfs 已存在，跳过复制: \(rootfsPath)")
             return rootfsPath
         }
 
-        // Validate source file exists
-        guard FileManager.default.fileExists(atPath: rootfsURL.path) else {
+        // Verify bundle rootfs exists
+        let bundleData = bundleRoot.appendingPathComponent("data", isDirectory: true)
+        let bbPath = bundleData.appendingPathComponent("bin/busybox")
+        guard FileManager.default.fileExists(atPath: bbPath.path) else {
             throw EngineError.rootfsNotFound
         }
 
-        // Check disk space
-        let neededBytes = try estimateNeededSpace(sourceURL: rootfsURL)
-        let availableBytes = try freeDiskSpace(at: targetRoot.path)
-        guard availableBytes >= neededBytes else {
-            throw EngineError.diskSpaceInsufficient(
-                availableBytes: availableBytes,
-                neededBytes: neededBytes
-            )
+        // Copy rootfs from bundle to writable Documents
+        print("[RootFSManager] 从 bundle 复制 rootfs 到 Documents...")
+        do {
+            // Remove stale copy if exists
+            if FileManager.default.fileExists(atPath: writableRoot.path) {
+                try FileManager.default.removeItem(at: writableRoot)
+            }
+            try FileManager.default.copyItem(at: bundleRoot, to: writableRoot)
+        } catch {
+            throw EngineError.extractionFailed(underlying: "rootfs 复制失败: \(error.localizedDescription)")
         }
-
-        // Extract
-        print("[RootFSManager] 开始解压 rootfs: \(rootfsURL.lastPathComponent)...")
-        try await extractTarGz(at: rootfsURL)
 
         // Verify
         try verifyRootFS()
@@ -354,34 +359,19 @@ final class RootFSManager: @unchecked Sendable {
 
     // MARK: - Existence Check
 
-    /// 检查 rootfs 是否已解压并有效。
+    /// 检查 rootfs 是否已复制到 Documents 并有效。
     func rootfsExists() -> Bool {
         let bbPath = (rootfsPath as NSString).appendingPathComponent("bin/busybox")
-        return FileSystemAccess.fileExists(at: bbPath)
+        return FileManager.default.fileExists(atPath: bbPath)
     }
 
     // MARK: - Cleanup
 
-    /// 删除已解压的 rootfs（用于强制重新初始化）。
+    /// 删除 writable rootfs（用于强制重新初始化）。
     func cleanupRootFS() throws {
-        guard FileSystemAccess.fileExists(at: rootfsPath) else { return }
-        print("[RootFSManager] 清理 rootfs: \(rootfsPath)")
-        try FileSystemAccess.deleteDirectory(at: rootfsPath)
-    }
-
-    // MARK: - Extraction
-
-    /// RootFS 预解压在 .app bundle 的 rootfs/ 目录中。
-    /// 无需运行时解压，直接指向即可。
-    private func extractTarGz(at sourceURL: URL) async throws {
-        // RootFS is already extracted in CI at build time into .app/rootfs/
-        // Just verify it exists
-        let rootfsDir = rootfsPath
-        let bbPath = (rootfsDir as NSString).appendingPathComponent("bin/busybox")
-        guard FileManager.default.fileExists(atPath: bbPath) else {
-            throw EngineError.rootfsCorrupted(reason: "rootfs bin/busybox not found at \(bbPath)")
-        }
-        print("[ISHEngine] RootFS verified at: \(rootfsDir)")
+        guard FileManager.default.fileExists(atPath: writableRoot.path) else { return }
+        print("[RootFSManager] 清理 rootfs: \(writableRoot.path)")
+        try FileManager.default.removeItem(at: writableRoot)
     }
 
     // MARK: - Verification
@@ -400,7 +390,7 @@ final class RootFSManager: @unchecked Sendable {
 
         for file in requiredFiles {
             let fullPath = (rootfsPath as NSString).appendingPathComponent(file)
-            if !FileSystemAccess.fileExists(at: fullPath) {
+            if !FileManager.default.fileExists(atPath: fullPath) {
                 missingFiles.append(file)
             }
         }
@@ -412,22 +402,6 @@ final class RootFSManager: @unchecked Sendable {
         }
 
         print("[RootFSManager] RootFS 验证通过: 所有关键文件存在")
-    }
-
-    // MARK: - Disk Space Estimation
-
-    /// 估算解压需要的磁盘空间（通常 tar.gz 解压后约 2-3x 大小）。
-    private func estimateNeededSpace(sourceURL: URL) throws -> Int64 {
-        let attrs = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
-        let compressedSize = (attrs[.size] as? Int64) ?? 0
-        // Conservative estimate: 4x compressed size
-        return compressedSize * 4
-    }
-
-    /// 获取路径所在卷的可用空间。
-    private func freeDiskSpace(at path: String) throws -> Int64 {
-        let attrs = try FileManager.default.attributesOfFileSystem(forPath: path)
-        return (attrs[.systemFreeSize] as? Int64) ?? 0
     }
 }
 

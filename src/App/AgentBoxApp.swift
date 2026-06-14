@@ -36,18 +36,19 @@ struct AgentBoxApp: App {
     /// 若 rootfs 资源未捆绑（开发阶段），跳过初始化，
     /// 其他模块（SpawnRoot、FileSystemAccess）仍可独立使用。
     private func initializeEngine() async {
-        // RootFS is pre-extracted at CI build time into .app/rootfs/data/
-        let rootfsDir = Bundle.main.bundleURL.appendingPathComponent("rootfs/data", isDirectory: true)
-        let bbPath = rootfsDir.appendingPathComponent("bin/busybox")
+        // Check bundle rootfs exists before attempting init
+        let bundleRootfs = Bundle.main.bundleURL.appendingPathComponent("rootfs/data", isDirectory: true)
+        let bbPath = bundleRootfs.appendingPathComponent("bin/busybox")
         guard FileManager.default.fileExists(atPath: bbPath.path) else {
-            print("[AgentBoxApp] rootfs/bin/busybox not found at \(bbPath.path)")
+            print("[AgentBoxApp] bundle rootfs/bin/busybox not found at \(bbPath.path)")
             return
         }
 
         print("[AgentBoxApp] 开始初始化 ish-arm64 引擎...")
 
         do {
-            try await engine.initialize(rootfsURL: rootfsDir)
+            // RootFSManager copies from bundle → Documents on first launch
+            try await engine.initialize(rootfsURL: bundleRootfs)
             print("[AgentBoxApp] ✅ ish-arm64 引擎初始化成功")
         } catch {
             print("[AgentBoxApp] ❌ 引擎初始化失败: \(error.localizedDescription)")
