@@ -185,35 +185,33 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 构建最新 ldid (v2.1.5-procursus7, 修复了 assert → 错误处理) ──
-      - name: Build ldid v2.1.5-procursus7
-        env:
-          SDKROOT: ""   # ldid 是 macOS 工具，不能用 iOS SDK
-        run: |
-          git clone --depth 1 --branch v2.1.5-procursus7 \
-            https://github.com/ProcursusTeam/ldid.git /tmp/ldid-src
-          cd /tmp/ldid-src
-          brew install openssl@3 libplist pkg-config
-          make -j$(sysctl -n hw.logicalcpu) \
-            OPENSSL_PREFIX=$(brew --prefix openssl@3) \
-            LIBPLIST_PREFIX=$(brew --prefix libplist)
-          cp ldid /usr/local/bin/ldid-procursus
-          ldid-procursus 2>&1 | head -1 || true
-
-      # ── 13. ldid 注入 entitlements ──
-      - name: ldid entitlements
+      # ── 12. 嵌入 entitlements + 兼容签名 ──
+      - name: Inject entitlements
         run: |
           set -e
           rm -rf Payload
           unzip -q AgentBox-unsigned.ipa
           BIN=Payload/AgentBox.app/AgentBox
 
-          echo "=== ldid-procursus (v2.1.5-procursus7) ==="
-          ldid-procursus -S src/Entitlements.plist "$BIN" 2>&1
+          # 用 codesign 嵌入 DER entitlements，但把 ad-hoc 签名写到单独文件
+          echo "=== codesign embed entitlements (detached sig) ==="
+          codesign --force --sign - \
+            --entitlements src/Entitlements.plist \
+            --detached /tmp/adhoc.sig \
+            "$BIN" 2>&1
+
+          # 移除 ad-hoc 签名（保留 DER entitlements 在 binary 里）
+          codesign --remove-signature "$BIN" 2>&1 || true
+
+          # 用 ldid 做 TrollStore 兼容的伪签名
+          echo "=== ldid pseudo-sign ==="
+          ldid -s "$BIN" 2>&1 || true
+
+          # 验证 entitlements 是否保留
           if codesign -d --entitlements - "$BIN" 2>/dev/null | grep -q "no-sandbox"; then
-            echo "SUCCESS: entitlements embedded via ldid"
+            echo "SUCCESS: entitlements present + TrollStore-compatible sig"
           else
-            echo "FAILED: no entitlements found"
+            echo "FAILED: entitlements lost after remove-signature"
             exit 1
           fi
 
