@@ -115,16 +115,6 @@ jobs:
           ninja -C build_arm64 libish.a libish_emu.a libfakefs.a
           echo "=== Libraries built ==="
           ls -lh build_arm64/libish.a build_arm64/libish_emu.a build_arm64/libfakefs.a
-          # Build fakefsify (not in default ninja targets)
-          echo "=== Building fakefsify ==="
-          brew install libarchive 2>/dev/null
-          cc -o build_arm64/tools/fakefsify tools/fakefsify.c tools/fakefs.c util/fchdir.c \
-            -I. -Itools -Iutil \
-            -I$(brew --prefix libarchive)/include \
-            build_arm64/libfakefs.a \
-            -L$(brew --prefix libarchive)/lib -larchive \
-            -lz -lbz2
-          ls -lh build_arm64/tools/fakefsify
 
       - name: Verify libraries
         run: |
@@ -183,20 +173,15 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Convert rootfs with fakefsify (fakefs_import → SQLite DB + data/ dir)
+          # Extract rootfs into data/ subdir (stable tar approach)
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
-          FAKEFSIFY="libish/build_arm64/tools/fakefsify"
-          if [ -f "$ROOTFS_TGZ" ] && [ -f "$FAKEFSIFY" ]; then
-            mkdir -p Payload/AgentBox.app/rootfs
-            "$FAKEFSIFY" "$ROOTFS_TGZ" Payload/AgentBox.app/rootfs/
-            echo "=== rootfs (fakefs format) ==="
-            find Payload/AgentBox.app/rootfs/ -maxdepth 2 -type f -o -type d | sort | head -30
+          if [ -f "$ROOTFS_TGZ" ]; then
+            mkdir -p Payload/AgentBox.app/rootfs/data
+            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/data/
             echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
           else
-            echo "WARN: rootfs.tar.gz or fakefsify not found"
+            echo "WARN: $ROOTFS_TGZ not found"
           fi
-          cp src/Entitlements.plist Payload/AgentBox.app/
-          zip -ry AgentBox-unsigned.ipa Payload/ -q
           cp src/Entitlements.plist Payload/AgentBox.app/
           zip -r AgentBox-unsigned.ipa Payload/ -q
           rm -rf Payload

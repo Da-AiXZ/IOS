@@ -205,6 +205,27 @@ final class ISHEngine: ObservableObject {
         }
         print("[ISHEngine] rootfs 完整性检查通过 (busybox OK)")
 
+        // ---- DIAG: verify path accessibility before calling mount_root ----
+        var diagLines: [String] = []
+        diagLines.append("路径: \(rootPath)")
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: rootPath) {
+            diagLines.append("类型: \(attrs[.type] ?? "?")  大小: \(attrs[.size] ?? 0)")
+            diagLines.append("权限: \(attrs[.posixPermissions] ?? 0)")
+        }
+        // Test writability
+        let testFile = (rootPath as NSString).appendingPathComponent(".agentbox_diag")
+        let testOK = FileManager.default.createFile(atPath: testFile, contents: Data("ok".utf8))
+        diagLines.append("写入测试: \(testOK ? "OK" : "FAIL")")
+        if testOK { try? FileManager.default.removeItem(atPath: testFile) }
+        // Check parent
+        let parent = (rootPath as NSString).deletingLastPathComponent
+        diagLines.append("父目录: \(parent)")
+        if let pattrs = try? FileManager.default.attributesOfItem(atPath: parent) {
+            diagLines.append("父目录权限: \(pattrs[.posixPermissions] ?? 0)")
+        }
+        state = .extracting(progress: diagLines.joined(separator: "\n"))
+        print("[ISHEngine] DIAG:\n\(diagLines.joined(separator: "\n"))")
+
         // ---- Phase 2: Boot Kernel ----
         let shim = ISHAppShim.current
         guard shim.initISH() else {
