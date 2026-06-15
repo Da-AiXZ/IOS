@@ -160,6 +160,8 @@ jobs:
 
       # ── 11. Native build of fakefsify (x86_64, runs on CI runner) ──
       - name: Build native fakefsify tool
+        env:
+          SDKROOT: ""  # unset iOS SDK root so native build uses macOS SDK
         run: |
           set -e
           cd libish
