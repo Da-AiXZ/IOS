@@ -534,13 +534,12 @@ int agentbox_boot_ish_kernel(const char *root_path) {
     exit_hook = agentbox_exit_hook;
     fprintf(stderr, "[AGENTBOX] exit_hook registered\n");
 
-    // ---- Step 6: Set scheduler thread ----
+    // ---- Step 6: Kernel booted, scheduler deferred ----
     // Don't call task_start(current) — pthread_create writes to libdyld __TEXT
-    // which triggers KERN_PROTECTION_FAILURE on iOS 16+. Instead, the current
-    // thread becomes the scheduler. task_start is called elsewhere when a child
-    // process is exec'd (see xX_main_Xx.h — no task_start there either).
-    current->thread = pthread_self();
-    fprintf(stderr, "[AGENTBOX] scheduler ready (current thread, no pthread_create)\n");
+    // which triggers KERN_PROTECTION_FAILURE on iOS 16+.
+    // The scheduler will be started on-demand when the first process is exec'd
+    // (see xX_main_Xx.h — task_start isn't called there either).
+    fprintf(stderr, "[AGENTBOX] kernel booted (scheduler deferred)\n");
 
     return 0;
 }
