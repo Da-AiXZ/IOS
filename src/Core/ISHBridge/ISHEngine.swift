@@ -356,6 +356,10 @@ final class RootFSManager: @unchecked Sendable {
                 try FileManager.default.removeItem(at: writableRoot)
             }
             try FileManager.default.copyItem(at: bundleRoot, to: writableRoot)
+            // Pre-create meta.db so fake_db_init opens instead of creates
+            let metaPath = writableRoot.appendingPathComponent("meta.db").path
+            FileManager.default.createFile(atPath: metaPath, contents: nil)
+            print("[RootFSManager] meta.db pre-created at \(metaPath)")
         } catch {
             throw EngineError.extractionFailed(underlying: "rootfs 复制失败: \(error.localizedDescription)")
         }
