@@ -429,6 +429,12 @@ extern struct fs_ops fakefs;                         // libfakefs.a: fake filesy
 extern int  mount_root(struct fs_ops *fs, const char *path); // libfakefs.a: mount fakefs at path
 extern void become_first_process(void);                   // libish: make current task init (PID 1)
 
+// AT_PWD sentinel for path_normalize (defined in fs/path.h)
+// Must use AT_PWD, not NULL — path_normalize asserts at != NULL
+#ifndef AT_PWD
+#define AT_PWD ((struct fd *) -2)
+#endif
+
 extern int  generic_mknodat(void *at, const char *path, mode_t_ mode, dev_t_ dev);
 extern int  generic_mkdirat(void *at, const char *path, mode_t_ mode);
 
@@ -499,23 +505,23 @@ int agentbox_boot_ish_kernel(const char *root_path) {
 
     // ---- Step 3: Create device nodes (matching iSH AppDelegate.m) ----
     // /dev/null, /dev/zero, /dev/full, /dev/random, /dev/urandom (MEM_MAJOR=1)
-    generic_mknodat(NULL, "/dev/null",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 3));
-    generic_mknodat(NULL, "/dev/zero",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 5));
-    generic_mknodat(NULL, "/dev/full",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 7));
-    generic_mknodat(NULL, "/dev/random",  S_IFCHR | 0666, dev_make(MEM_MAJOR, 8));
-    generic_mknodat(NULL, "/dev/urandom", S_IFCHR | 0666, dev_make(MEM_MAJOR, 9));
+    generic_mknodat(AT_PWD, "/dev/null",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 3));
+    generic_mknodat(AT_PWD, "/dev/zero",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 5));
+    generic_mknodat(AT_PWD, "/dev/full",    S_IFCHR | 0666, dev_make(MEM_MAJOR, 7));
+    generic_mknodat(AT_PWD, "/dev/random",  S_IFCHR | 0666, dev_make(MEM_MAJOR, 8));
+    generic_mknodat(AT_PWD, "/dev/urandom", S_IFCHR | 0666, dev_make(MEM_MAJOR, 9));
     // /dev/tty[1-7] (TTY_CONSOLE_MAJOR=4)
     for (int i = 1; i <= 7; i++) {
         char name[16];
         snprintf(name, sizeof(name), "/dev/tty%d", i);
-        generic_mknodat(NULL, name, S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, i));
+        generic_mknodat(AT_PWD, name, S_IFCHR | 0666, dev_make(TTY_CONSOLE_MAJOR, i));
     }
     // /dev/tty, /dev/console, /dev/ptmx (TTY_ALTERNATE_MAJOR=5)
-    generic_mknodat(NULL, "/dev/tty",     S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 0));
-    generic_mknodat(NULL, "/dev/console", S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 1));
-    generic_mknodat(NULL, "/dev/ptmx",    S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 2));
+    generic_mknodat(AT_PWD, "/dev/tty",     S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 0));
+    generic_mknodat(AT_PWD, "/dev/console", S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 1));
+    generic_mknodat(AT_PWD, "/dev/ptmx",    S_IFCHR | 0666, dev_make(TTY_ALTERNATE_MAJOR, 2));
     // /dev/pts directory
-    generic_mkdirat(NULL, "/dev/pts", 0755);
+    generic_mkdirat(AT_PWD, "/dev/pts", 0755);
 
     fprintf(stderr, "[AGENTBOX] devices OK\n");
 
