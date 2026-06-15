@@ -158,7 +158,26 @@ jobs:
             2>&1 | tee xcodebuild.log
           echo "=== Build exit code: $? ==="
 
-      # ── 11. 打包 IPA ──
+      # ── 11. Native build of fakefsify (x86_64, runs on CI runner) ──
+      - name: Build native fakefsify tool
+        run: |
+          set -e
+          cd libish
+          echo "=== Native meson setup (x86_64 macOS) ==="
+          meson setup build_native \
+            -Dengine=asbestos \
+            -Dkernel=ish \
+            -Dguest_arch=arm64 \
+            -Ddefault_library=static \
+            --buildtype=release \
+            --wipe
+          echo "=== Building fakefsify only ==="
+          ninja -C build_native fakefsify
+          echo "=== Verify native binary ==="
+          file build_native/fakefsify
+          cd ..
+
+      # ── 12. 打包 IPA ──
       - name: Package unsigned IPA
         run: |
           set -e
@@ -173,12 +192,14 @@ jobs:
           echo "Found: $APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          # Extract rootfs into data/ subdir (stable tar approach)
+          # Import rootfs via fakefsify → generates both data/ and meta.db
           ROOTFS_TGZ="src/Resources/rootfs.tar.gz"
           if [ -f "$ROOTFS_TGZ" ]; then
-            mkdir -p Payload/AgentBox.app/rootfs/data
-            tar -xzf "$ROOTFS_TGZ" --strip-components=1 -C Payload/AgentBox.app/rootfs/data/
+            mkdir -p Payload/AgentBox.app/rootfs
+            echo "=== fakefsify import: $ROOTFS_TGZ → Payload/AgentBox.app/rootfs/ ==="
+            libish/build_native/fakefsify "$ROOTFS_TGZ" Payload/AgentBox.app/rootfs/
             echo "RootFS size: $(du -sh Payload/AgentBox.app/rootfs/ | awk '{print $1}')"
+            echo "meta.db size: $(ls -lh Payload/AgentBox.app/rootfs/meta.db | awk '{print $5}')"
           else
             echo "WARN: $ROOTFS_TGZ not found"
           fi
@@ -187,13 +208,13 @@ jobs:
           rm -rf Payload
           echo "Unsigned IPA: $(ls -lh AgentBox-unsigned.ipa)"
 
-      # ── 12. 发布（未签名 — zsign ad-hoc 导致闪退）──
+      # ── 13. 发布（未签名 — zsign ad-hoc 导致闪退）──
       - name: Final IPA (unsigned)
         run: |
           cp AgentBox-unsigned.ipa AgentBox.ipa
           echo "IPA: $(ls -lh AgentBox.ipa)"
 
-      # ── 13. 发布 Release ──
+      # ── 14. 发布 Release ──
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
@@ -205,7 +226,7 @@ jobs:
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 14. 失败时上传日志 ──
+      # ── 15. 失败时上传日志 ──
       - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -214,4 +235,5 @@ jobs:
           path: |
             xcodebuild.log
             libish/build_arm64/meson-logs/
+            libish/build_native/meson-logs/
             DerivedData/**/Logs/
