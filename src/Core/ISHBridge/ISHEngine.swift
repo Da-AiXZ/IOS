@@ -223,13 +223,21 @@ final class ISHEngine: ObservableObject {
         print("[ISHEngine] DIAG: \(diagStr)")
 
         // ---- Phase 2: Boot Kernel ----
+        // Must run on a background thread: task_start() calls pthread_create(),
+        // which crashes on iOS 16+ when called from the main thread (writes to
+        // libdyld __TEXT trigger KERN_PROTECTION_FAILURE).
         let shim = ISHAppShim.current
         guard shim.initISH() else {
             let err = EngineError.kernelBootFailed(reason: "ish 环境初始化失败 | \(diagStr)")
             state = .error(err.localizedDescription)
             throw err
         }
-        let bootResult = shim.bootKernel(rootPath)
+        let bootResult: Int32 = try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.global().async {
+                let result = shim.bootKernel(rootPath)
+                cont.resume(returning: result)
+            }
+        }
         guard bootResult == 0 else {
             let diagInfo = ISHAppShim.current.lastBootDiag
             let err = EngineError.kernelBootFailed(reason: "-22 | \(diagStr) | C: \(diagInfo)")
