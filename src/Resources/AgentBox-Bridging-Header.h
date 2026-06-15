@@ -116,4 +116,7 @@ int agentbox_wexitstatus(int status);
 int agentbox_wifsignaled(int status);
 int agentbox_wtermsig(int status);
 
+/// Returns a C string with diagnostic info from the last boot attempt.
+const char *agentbox_get_boot_diag(void);
+
 #endif /* AgentBox_Bridging_Header_h */

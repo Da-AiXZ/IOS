@@ -450,34 +450,48 @@ static inline dev_t_ dev_make(int major, int minor) {
     return (dev_t_)(((major) << 8) | (minor));
 }
 
+// ---- Diagnostic buffer (readable by Swift via agentbox_get_boot_diag) ----
+static char boot_diag[2048];
+
+const char *agentbox_get_boot_diag(void) { return boot_diag; }
+
 int agentbox_boot_ish_kernel(const char *root_path) {
+    boot_diag[0] = '\0';
     if (root_path == NULL) {
-        errno = EINVAL;
+        snprintf(boot_diag, sizeof(boot_diag), "NULL path");
         return -1;
     }
 
-    // Resolve symlinks in path (iOS containers use symlinks like /var -> /private/var)
+    // Resolve symlinks
     char real_path[PATH_MAX];
     if (realpath(root_path, real_path) == NULL) {
-        fprintf(stderr, "[AGENTBOX] realpath(%s) failed: %s\n", root_path, strerror(errno));
+        snprintf(boot_diag, sizeof(boot_diag), "realpath failed: %s", strerror(errno));
         return -1;
     }
 
     struct stat st;
     if (stat(real_path, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        errno = ENOENT;
+        snprintf(boot_diag, sizeof(boot_diag), "stat failed or not dir");
         return -1;
     }
 
-    fprintf(stderr, "[AGENTBOX] Booting ish kernel, rootfs=%s (real=%s)\n", root_path, real_path);
+    // DIAG: test open before mount_root
+    int test_fd = open(real_path, O_DIRECTORY);
+    if (test_fd < 0) {
+        snprintf(boot_diag, sizeof(boot_diag), "pre-mount open(%s) FAIL: %s", real_path, strerror(errno));
+        return -1;
+    }
+    close(test_fd);
+    snprintf(boot_diag, sizeof(boot_diag), "pre-mount open(%s) OK | ", real_path);
 
     // ---- Step 1: Mount fakefs ----
     int err = mount_root(&fakefs, real_path);
     if (err < 0) {
-        fprintf(stderr, "[AGENTBOX] mount_root failed: %d\n", err);
+        size_t len = strlen(boot_diag);
+        snprintf(boot_diag + len, sizeof(boot_diag) - len, "mount_root=%d errno=%d(%s)", err, errno, strerror(errno));
         return err;
     }
-    fprintf(stderr, "[AGENTBOX] mount_root OK\n");
+    strcat(boot_diag, "mount OK | ");
 
     // ---- Step 2: Become PID 1 ----
     become_first_process();

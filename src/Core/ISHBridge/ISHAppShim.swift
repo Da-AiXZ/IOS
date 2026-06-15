@@ -109,11 +109,15 @@ final class ISHAppShim: NSObject {
             bootCompleted = true
             print("[ISHAppShim] ish 内核启动成功")
         } else {
-            print("[ISHAppShim] ish 内核启动失败，错误码: \(result)")
+            let diag = String(cString: agentbox_get_boot_diag())
+            print("[ISHAppShim] boot failed \(result), diag: \(diag)")
+            lastBootDiag = diag
         }
 
         return result
     }
+
+    @objc var lastBootDiag: String = ""
 
     // MARK: - Post-Boot Session Setup
 

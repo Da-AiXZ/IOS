@@ -231,7 +231,8 @@ final class ISHEngine: ObservableObject {
         }
         let bootResult = shim.bootKernel(rootPath)
         guard bootResult == 0 else {
-            let err = EngineError.kernelBootFailed(reason: "-22 | \(diagStr)")
+            let diagInfo = ISHAppShim.current.lastBootDiag
+            let err = EngineError.kernelBootFailed(reason: "-22 | \(diagStr) | C: \(diagInfo)")
             state = .error(err.localizedDescription)
             throw err
         }
