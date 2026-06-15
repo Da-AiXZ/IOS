@@ -162,10 +162,15 @@ jobs:
       - name: Build native fakefsify tool
         env:
           SDKROOT: ""  # unset iOS SDK root so native build uses macOS SDK
+          PKG_CONFIG_PATH: "/opt/homebrew/opt/libarchive/lib/pkgconfig:/opt/homebrew/opt/sqlite3/lib/pkgconfig:/usr/local/opt/libarchive/lib/pkgconfig"
         run: |
           set -e
           cd libish
-          echo "=== Native meson setup (x86_64 macOS) ==="
+          echo "=== libarchive check ==="
+          pkg-config --modversion libarchive || echo "(not in pkg-config, trying brew prefix)"
+          ls -la /opt/homebrew/opt/libarchive/lib/libarchive.dylib 2>/dev/null || echo "(checking Intel path)"
+          ls -la /usr/local/opt/libarchive/lib/libarchive.dylib 2>/dev/null || echo "(not found)"
+          echo "=== Native meson setup (macOS host) ==="
           meson setup build_native \
             -Dengine=asbestos \
             -Dkernel=ish \
@@ -173,6 +178,8 @@ jobs:
             -Ddefault_library=static \
             --buildtype=release \
             --wipe
+          echo "=== Available ninja targets ==="
+          ninja -C build_native -t targets | grep -i fake || echo "(no fakefsify target!)"
           echo "=== Building fakefsify only ==="
           ninja -C build_native fakefsify
           echo "=== Verify native binary ==="
