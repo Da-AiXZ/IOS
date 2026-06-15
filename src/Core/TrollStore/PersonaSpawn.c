@@ -534,12 +534,13 @@ int agentbox_boot_ish_kernel(const char *root_path) {
     exit_hook = agentbox_exit_hook;
     fprintf(stderr, "[AGENTBOX] exit_hook registered\n");
 
-    // ---- Step 6: Start scheduler ----
-    // Note: do_execve is not exported from libish.a. We skip launching an init
-    // process here. ISHShellExecutor handles process creation via
-    // become_new_init_child() when a command needs to run.
-    task_start(current);
-    fprintf(stderr, "[AGENTBOX] task_start() called — kernel live\n");
+    // ---- Step 6: Set scheduler thread ----
+    // Don't call task_start(current) — pthread_create writes to libdyld __TEXT
+    // which triggers KERN_PROTECTION_FAILURE on iOS 16+. Instead, the current
+    // thread becomes the scheduler. task_start is called elsewhere when a child
+    // process is exec'd (see xX_main_Xx.h — no task_start there either).
+    current->thread = pthread_self();
+    fprintf(stderr, "[AGENTBOX] scheduler ready (current thread, no pthread_create)\n");
 
     return 0;
 }
